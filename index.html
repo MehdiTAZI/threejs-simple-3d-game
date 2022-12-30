@@ -1,0 +1,280 @@
+  <!DOCTYPE html>
+  <!--
+  TODO : 
+    Organize code
+    Add Physics and sound engines
+    Add textures and 3D Objects
+
+  -->
+  <html>
+    <head>
+      <title>Breaker Game</title>
+      <script src="https://cdn.jsdelivr.net/npm/three@0.119.1/build/three.min.js"></script>
+      <!--
+      <script src="https://cdn.jsdelivr.net/npm/cannon@0.7.0/build/cannon.min.js"></script>
+      -->
+    </head>
+    <body>
+      <canvas id="game-canvas"></canvas>
+      <style>
+        body {
+          margin: 0;
+        }
+        canvas {
+          width: 100%;
+          height: 100%;
+        }
+      </style>
+      <script>
+        //TODO Add physical engine
+        var light_direction = new THREE.Vector3(0.05,0.05,0);
+        var ball_direction = new THREE.Vector3(0.2,0.2,0);
+        
+        var camera_position_direction = new THREE.Vector3(1,1,0);
+        
+
+
+        // Set up the scene
+        var scene = new THREE.Scene();
+
+        // Set up the camera
+        var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+        camera.position.set(0, 0 , 20);
+        var target_view = new THREE.Vector3(0, 0, 0);
+        camera.lookAt(target_view);
+
+
+        // Set up the renderer
+        var renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("game-canvas") });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        // create the paddle geometry
+        var paddleGeometry = new THREE.CylinderGeometry(1, 1, 5, 32, 4, false);
+        // create the paddle material
+        var paddleMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+        // create the paddle mesh
+        var paddle = new THREE.Mesh(paddleGeometry, paddleMaterial);
+        paddle.rotateZ(Math.PI/2);
+        paddle.position.set(0, -10, 0);
+        scene.add(paddle);
+
+
+        // create a light source
+       var light = new THREE.PointLight(0xffffff, 1, 50);
+       light.position.set(0, 0, 10);
+
+             // add the light to the scene
+        scene.add(light);
+
+
+
+  // create a CubeTextureLoader to load the cube map image
+  var textureLoader = new THREE.CubeTextureLoader();
+
+  // load the cube map image and set the mapping mode to THREE.CubeReflectionMapping
+  var cubeTexture = textureLoader.load([
+    'file:///Users/MEHDI/Downloads/image1.png',
+    'file:///Users/MEHDI/Downloads/image1.png',
+    'file:///Users/MEHDI/Downloads/image1.png',
+    'file:///Users/MEHDI/Downloads/image1.png',
+    'file:///Users/MEHDI/Downloads/image1.png',
+    'file:///Users/MEHDI/Downloads/image1.png'
+    //'https://www.pngmart.com/files/5/Landscape-Transparent-PNG.png'
+  ], THREE.CubeReflectionMapping);
+
+
+
+  // create a MeshBasicMaterial with the cube map as the texture
+  var cubeMaterial = new THREE.MeshBasicMaterial({ map: cubeTexture });
+
+  // create a BoxGeometry with a size of 1
+  var cubeGeometry = new THREE.BoxGeometry(5, 5, 5);
+
+  // create a mesh using the geometry and material
+  var cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+  cube.position.set(-15,-2,0)
+
+  // add the cube to the scene
+  scene.add(cube);
+
+
+
+
+
+
+
+  checkForIOInteraction();
+
+
+  // Set up the ball
+  var ballGeometry = new THREE.SphereGeometry(0.5, 32, 32);
+  var ballMaterial = new THREE.MeshLambertMaterial({ color: 0x0000ff });
+  var ball = new THREE.Mesh(ballGeometry, ballMaterial);
+  ball.position.set(0, -8, 0);
+  scene.add(ball);
+
+  // Set up the blocks
+  var blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+
+  var blocks = [];
+  var logic_color = 0.95
+
+  for (var i = -15; i < 15; i++) {
+
+    for (var j = 0; j < 15; j++) {
+      
+      
+      logic_color =  (Math.abs(i)+Math.abs(j)) / 30 ;
+      if(logic_color < 0.2)
+          logic_color = logic_color + 0.2
+
+      var block_color = new THREE.Color(0,logic_color , 0); 
+      var blockMaterial = new THREE.MeshPhongMaterial({ color: block_color });
+      var block = new THREE.Mesh(blockGeometry, blockMaterial);
+      block.position.set(i - 2, j - 2, 0);
+      scene.add(block);
+      blocks.push(block);
+    }
+  }
+
+  // Set up the game loop
+  function update() {
+    requestAnimationFrame(update);
+
+
+
+    // Update the ball position
+    ball.position.add(ball_direction)
+
+
+
+
+    checkForCollisions();
+
+
+
+    lightMouvement();
+    updateCameraPosition();
+
+    // Render the scene
+    renderer.render(scene, camera);
+  }
+
+  function checkForCollisions(){
+
+
+
+  // Check for lost ball (game over)
+
+  if (ball.position.y < paddle.position.y ) {
+    ball.position.y =  paddle.position.y + 25
+    ball_direction.y = Math.abs(ball_direction.y)
+   
+  }
+
+
+    // Check for collision with the walls
+  if (ball.position.x < -30 || ball.position.x > 27) {
+    ball_direction.x = -ball_direction.x;
+  }
+  if (ball.position.y < -13 || ball.position.y > 15) {
+   ball_direction.y = -ball_direction.y;
+  }
+
+
+
+  // Check for collision with the paddle
+  // 1 ==> size of ball x 2  // 2 size of paddle/2
+  if (ball.position.y < paddle.position.y + 1 && ball.position.y > paddle.position.y - 1) {
+    if (ball.position.x > paddle.position.x -2-1  && ball.position.x < paddle.position.x +2+1) {
+      // Calculate the new position of the ball
+      
+
+      ball_direction.y = -ball_direction.y;
+
+
+      if (ball.position.x > paddle.position.x -1+0.5)
+        ball_direction.x = 0.2;
+      
+      else
+        ball_direction.x = -0.2
+
+
+      //if(ball.position.x + 0.5)
+        //ball_direction.x = 
+
+    }
+  }
+
+    // Check for collision with blocks
+    for (var i = 0; i < blocks.length; i++) {
+      if (blocks[i].position.distanceTo(ball.position) < 1) {
+
+        // Calculate the new position of the ball
+       
+        ball_direction.x = -ball_direction.x
+        ball_direction.y = -ball_direction.y
+
+        scene.remove(blocks[i]);
+        blocks.splice(i, 1);
+        i--;
+      }
+    }
+
+  }
+
+  function lightMouvement(){
+
+    light.position.x = ball.position.x
+    light.position.y = ball.position.y
+  /*
+     light.position = light.position.add(light_direction)
+
+
+     if (light.position.x<-15)
+        light_direction.x = 0.05
+     else if(light.position.x>15)
+        light_direction.x = -0.05
+
+    if (light.position.y<-15)
+        light_direction.y = 0.05
+     else if(light.position.y>15)
+        light_direction.y = -0.05
+    */
+  }
+
+  function updateCameraPosition(){
+    if (target_view.x<-30)
+        camera_position_direction.x = 0.2
+     else if(target_view.x>30)
+        camera_position_direction.x = -0.2
+
+    if (target_view.y<-30)
+        camera_position_direction.y = 0.2
+     else if(target_view.y>30)
+        camera_position_direction.y = -0.2
+
+    target_view.add(camera_position_direction)
+      
+  }
+
+  function checkForIOInteraction(){
+     // Set up mouse control for the paddle
+  document.addEventListener("keydown", function(event) {
+    if (event.code === "ArrowLeft") {
+      // move the paddle to the left
+      paddle.position.x -= 1;
+    } else if (event.code === "ArrowRight") {
+      // move the paddle to the right
+      paddle.position.x += 1;
+    }
+  });
+
+  }
+
+  update();
+      </script>
+    </body>
+  </html>
