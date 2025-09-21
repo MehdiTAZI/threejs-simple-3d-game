@@ -61,6 +61,43 @@
           text-align: right;
         }
         #controls .btn-row { margin-top: 6px; }
+        .level-grid { margin-top: 10px; }
+        .level-card {
+          background: rgba(30, 41, 59, 0.85);
+          border: 1px solid transparent;
+          border-radius: 14px;
+          padding: 18px;
+          text-align: left;
+          color: inherit;
+          cursor: pointer;
+          transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .level-card .title { font-size: 19px; font-weight: 700; margin-bottom: 6px; }
+        .level-card .subtitle { font-size: 13px; color: #93c5fd; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+        .level-card .description { font-size: 13px; color: #cbd5f5; margin-bottom: 10px; }
+        .level-card .stats { font-size: 12px; color: #fbbf24; }
+        .level-card:hover { transform: translateY(-3px); border-color: rgba(59, 130, 246, 0.68); box-shadow: 0 10px 24px rgba(30, 64, 175, 0.28); }
+        .level-card.active { border-color: rgba(236, 72, 153, 0.8); box-shadow: 0 12px 28px rgba(236, 72, 153, 0.35); }
+        #level-details { display: block; font-size: 13px; color: #cbd5f5; margin-right: 24px; }
+        #level-open-btn {
+          margin-top: 8px;
+          background: rgba(129, 140, 248, 0.22);
+          border: 1px solid rgba(129, 140, 248, 0.6);
+          border-radius: 999px;
+          padding: 7px 18px;
+          color: #e0e7ff;
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        #level-open-btn:hover { border-color: rgba(167, 139, 250, 0.9); color: #f5f3ff; }
+        #difficulty-info {
+          margin-top: 6px;
+          font-size: 11px;
+          color: #cbd5f5;
+          max-width: 260px;
+          margin-left: auto;
+        }
         #volume-control {
           margin-top: 10px;
           font-size: 12px;
@@ -162,7 +199,8 @@
           font-size: 13px;
           color: #cbd5f5;
         }
-        #select-confirm {
+        #select-confirm,
+        #level-confirm {
           background: linear-gradient(135deg, #6366f1, #8b5cf6);
           border: none;
           border-radius: 999px;
@@ -172,7 +210,8 @@
           cursor: pointer;
           transition: opacity 0.2s ease;
         }
-        #select-confirm:disabled { opacity: 0.45; cursor: not-allowed; }
+        #select-confirm:disabled,
+        #level-confirm:disabled { opacity: 0.45; cursor: not-allowed; }
       </style>
     </head>
     <body>
@@ -196,6 +235,8 @@
       <div id="controls">
         <div>Controls: arrows / mouse • Magic: press F</div>
         <div class="btn-row"><button id="start-btn">Start</button> <button id="pause-btn">Pause</button> <button id="restart-btn">Restart</button> <button id="audio-btn">Audio: on</button></div>
+        <button id="level-open-btn">Select Level</button>
+        <div id="difficulty-info"></div>
         <div id="volume-control">Volume: <input id="volume-range" type="range" min="0" max="100" value="80" /></div>
       </div>
 
@@ -224,6 +265,36 @@
           <div class="modal-footer">
             <span id="paddle-details">Select a paddle to inspect its stats.</span>
             <button id="select-confirm" disabled>Confirm</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="level-select-modal" class="modal hidden">
+        <div class="modal-content">
+          <h2>Select your mission</h2>
+          <div class="paddle-grid level-grid">
+            <button class="level-card active" data-key="nebula">
+              <div class="title">Nebula Run</div>
+              <div class="subtitle">Easy • Stage 1</div>
+              <div class="description">Gentle ball speed and extra lives make it perfect for warm-ups.</div>
+              <div class="stats">Music: Synthwave Nebula</div>
+            </button>
+            <button class="level-card" data-key="garden">
+              <div class="title">Cosmic Bloom</div>
+              <div class="subtitle">Normal • Stage 2</div>
+              <div class="description">Balanced pace with the original challenge curve and rewards.</div>
+              <div class="stats">Music: Cosmic Garden</div>
+            </button>
+            <button class="level-card" data-key="station">
+              <div class="title">Orbital Siege</div>
+              <div class="subtitle">Hard • Stage 3</div>
+              <div class="description">Less margin for error, faster rebounds, and denser brick waves.</div>
+              <div class="stats">Music: Orbital Station</div>
+            </button>
+          </div>
+          <div class="modal-footer">
+            <span id="level-details">Nebula Run — Gentle ball speed and extra lives make it perfect for warm-ups.</span>
+            <button id="level-confirm">Confirm</button>
           </div>
         </div>
       </div>
@@ -401,7 +472,8 @@
         // Game state & HUD
         var gameState = 'menu'; // 'menu' | 'playing' | 'paused' | 'gameover'
         var score = 0;
-        var lives = 3;
+        var defaultLives = 3;
+        var lives = defaultLives;
         var level = 1;
         var achievements = {};
         var powerUps = [];
@@ -461,18 +533,58 @@
             ability: { name: 'Time slow', type: 'slow', cooldown: 13000, duration: 5000, factor: 0.45 }
           }
         };
+        var difficultyProfiles = {
+          nebula: {
+            name: 'Nebula Run',
+            description: 'Generous lives and a calmer ball speed ideal for warm-ups.',
+            startLevel: 1,
+            lives: 5,
+            speedMultiplier: 0.85,
+            growthMultiplier: 0.75,
+            maxSpeedMultiplier: 0.8,
+            musicTheme: 'Synthwave Nebula'
+          },
+          garden: {
+            name: 'Cosmic Bloom',
+            description: 'Balanced challenge with standard lives and tempo.',
+            startLevel: 2,
+            lives: defaultLives,
+            speedMultiplier: 1,
+            growthMultiplier: 1,
+            maxSpeedMultiplier: 1,
+            musicTheme: 'Cosmic Garden'
+          },
+          station: {
+            name: 'Orbital Siege',
+            description: 'Fewer lives, faster ball, and a steeper speed curve.',
+            startLevel: 3,
+            lives: 2,
+            speedMultiplier: 1.12,
+            growthMultiplier: 1.25,
+            maxSpeedMultiplier: 1.2,
+            musicTheme: 'Orbital Station'
+          }
+        };
         var selectedPaddleKey = null;
         var selectedPaddleProfile = null;
+        var selectedDifficultyKey = 'nebula';
         var abilityCooldownEnd = 0;
         var abilityActiveUntil = 0;
         var abilityReady = false;
         var abilityState = { shieldActive: false, shieldMesh: null, shieldEnd: 0, dashBoostEnd: 0, slowTimeActive: false, slowEnd: 0, slowFactor: 0.5 };
 
+        function getSelectedDifficulty(){
+          return difficultyProfiles[selectedDifficultyKey] || difficultyProfiles.nebula;
+        }
+
         var ballDirection = new THREE.Vector3(0.7, 0.7, 0).normalize();
-        var baseBallSpeed = 0.28;
+        var defaultBaseBallSpeed = 0.28;
+        var defaultMaxBallSpeed = 0.62;
+        var defaultBallSpeedGrowth = 0.015;
+        var baseBallSpeed = defaultBaseBallSpeed;
         var ballSpeed = baseBallSpeed;
-        var maxBallSpeed = 0.62;
-        var ballSpeedGrowth = 0.015;
+        var maxBallSpeed = defaultMaxBallSpeed;
+        var ballSpeedGrowth = defaultBallSpeedGrowth;
         var tempVec1 = new THREE.Vector3();
         var tempVec2 = new THREE.Vector3();
 
@@ -733,6 +845,11 @@
         };
 
         var musicTracks = {
+          'Start Screen': {
+            url: 'resources/start.mp3',
+            volume: 0.2,
+            loop: true
+          },
           'Synthwave Nebula': {
             url: 'resources/background1.mp3',
             volume: 0.26,
@@ -740,7 +857,7 @@
           },
           'Cosmic Garden': {
             url: 'resources/background2.mp3',
-            volume: 0.22,
+            volume: 0.24,
             loop: true
           },
           'Orbital Station': {
@@ -749,11 +866,13 @@
             loop: true
           },
           default: {
-            url: 'resources/background4.mp3',
-            volume: 0.24,
+            url: 'resources/background1.mp3',
+            volume: 0.23,
             loop: true
           }
         };
+
+        pendingMusicTheme = 'Start Screen';
 
         function initAudioEngine(){
           if(audioCtx) return;
@@ -1077,6 +1196,35 @@
             pauseMusic();
           }
           applyAudioVolume();
+        }
+
+        function enterMenuState(customMessage){
+          stopThemeMusic();
+          pendingMusicTheme = 'Start Screen';
+          gameState = 'menu';
+          var profile = getSelectedDifficulty();
+          score = 0;
+          level = profile.startLevel;
+          lives = profile.lives;
+          updateHUD();
+          var prompt = customMessage || 'Select a level and paddle to start';
+          showMessage(prompt);
+          if(customMessage){
+            setTimeout(function(){
+              if(gameState === 'menu'){
+                showMessage('Select a level and paddle to start');
+              }
+            }, 4200);
+          }
+          if(stageBanner){
+            stageBanner.textContent = profile.name;
+            stageBanner.style.opacity = 0.85;
+          }
+          if(audioEnabled && audioUnlocked){
+            ensureAudioReady();
+            resumeMusic();
+          }
+          updateDifficultyInfo();
         }
 
         THREE.Cache.enabled = true;
@@ -1538,23 +1686,112 @@
           setMasterVolume((parseInt(e.target.value, 10) || 0) / 100);
         });
 
+        var levelModal = document.getElementById('level-select-modal');
+        var levelCards = Array.prototype.slice.call(document.querySelectorAll('.level-card'));
+        var levelConfirm = document.getElementById('level-confirm');
+        var levelDetails = document.getElementById('level-details');
+        var levelOpenBtn = document.getElementById('level-open-btn');
+        var difficultyInfoEl = document.getElementById('difficulty-info');
+        var pendingDifficultyKey = selectedDifficultyKey;
+
+        function describeDifficulty(profile){
+          return profile.name + ' — ' + profile.description;
+        }
+
+        function updateDifficultyInfo(){
+          var profile = getSelectedDifficulty();
+          if(difficultyInfoEl) difficultyInfoEl.textContent = describeDifficulty(profile);
+          if(levelOpenBtn) levelOpenBtn.textContent = 'Level: ' + profile.name;
+        }
+
+        function refreshLevelCards(){
+          levelCards.forEach(function(card){
+            var key = card.getAttribute('data-key');
+            card.classList.toggle('active', key === pendingDifficultyKey);
+          });
+          var profile = difficultyProfiles[pendingDifficultyKey] || getSelectedDifficulty();
+          if(levelDetails) levelDetails.textContent = describeDifficulty(profile);
+        }
+
+        function openLevelModal(){
+          pendingDifficultyKey = selectedDifficultyKey;
+          refreshLevelCards();
+          levelModal.classList.remove('hidden');
+        }
+
+        function closeLevelModal(){
+          levelModal.classList.add('hidden');
+        }
+
+        function applyDifficultySelection(key){
+          if(!difficultyProfiles[key]) return;
+          selectedDifficultyKey = key;
+          var profile = difficultyProfiles[key];
+          updateDifficultyInfo();
+          if(gameState === 'menu'){
+            if(stageBanner) stageBanner.textContent = profile.name;
+            level = profile.startLevel;
+            lives = profile.lives;
+            updateHUD();
+          }
+          if(gameState === 'menu' && audioEnabled && audioUnlocked){
+            pendingMusicTheme = 'Start Screen';
+            resumeMusic();
+          }
+        }
+
+        levelCards.forEach(function(card){
+          card.addEventListener('click', function(){
+            pendingDifficultyKey = card.getAttribute('data-key');
+            refreshLevelCards();
+          });
+        });
+
+        if(levelConfirm){
+          levelConfirm.addEventListener('click', function(){
+            applyDifficultySelection(pendingDifficultyKey);
+            closeLevelModal();
+          });
+        }
+
+        if(levelOpenBtn){
+          levelOpenBtn.addEventListener('click', function(){
+            openLevelModal();
+          });
+        }
+
+        if(levelModal){
+          levelModal.addEventListener('click', function(evt){
+            if(evt.target === levelModal){
+              closeLevelModal();
+            }
+          });
+        }
+
+        updateDifficultyInfo();
+
         function startGame(){
           if(!selectedPaddleProfile){
             openSelectionModal();
             showMessage('Choose a paddle to get started', 1800);
             return;
           }
+          var difficulty = getSelectedDifficulty();
           stopThemeMusic();
           ensureAudioReady();
           playSfx('levelUp');
-          score = 0; lives = 3; level = 1;
+          score = 0;
+          level = difficulty.startLevel;
+          lives = difficulty.lives;
           totalBlocksDestroyed = 0;
           resetCombo();
           resetQuest();
           while(powerUps.length){ var extra = powerUps.pop(); scene.remove(extra); }
-          buildLevel();
-          baseBallSpeed = 0.28;
+          baseBallSpeed = defaultBaseBallSpeed * (difficulty.speedMultiplier || 1);
+          maxBallSpeed = defaultMaxBallSpeed * (difficulty.maxSpeedMultiplier || 1);
+          ballSpeedGrowth = defaultBallSpeedGrowth * (difficulty.growthMultiplier || 1);
           ballSpeed = baseBallSpeed;
+          buildLevel();
           resetBallPosition();
           paddle.position.x = 0;
           paddleTargetX = 0;
@@ -1608,10 +1845,8 @@
             resetCombo();
             updateHUD();
             if(lives<=0){
-              gameState='gameover';
-              showMessage('Game Over - score ' + score, 4200);
               playSfx('gameOver');
-              pauseMusic();
+              enterMenuState('Game Over - score ' + score);
               return;
             }
             resetBallPosition();
@@ -1889,8 +2124,7 @@
         }
 
         // Start in menu
-        document.getElementById('message').textContent = 'Click "Start" to play';
-        document.getElementById('message').style.display = 'block';
+        enterMenuState();
 
         // initial I/O
         function checkForIOInteraction(){
