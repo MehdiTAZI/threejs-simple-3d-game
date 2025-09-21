@@ -119,3 +119,5 @@ Made with ☕ and 🎧 by the Breaker 3D Arcade team. Enjoy the neon chaos!
 - **cool background picture** - Add background pictures or videos
 - **3DModels** change 3D models by adapted ones, change padel, bricks, ball, etc
 - **bonus** - ensure adding new bonus (fast ball, slow ball, multiple balls, etc)
+
+For test : https://tazimehdi.com/threejs-simple-3d-game/
