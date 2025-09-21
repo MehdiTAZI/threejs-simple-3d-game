@@ -175,6 +175,129 @@
           box-shadow: 0 20px 60px rgba(2, 6, 23, 0.55);
           color: #e2e8f0;
         }
+        .modal-content.scoreboard-content {
+          max-width: 420px;
+        }
+        .scoreboard-stats {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+          gap: 16px;
+          margin-bottom: 18px;
+        }
+        .scoreboard-stats .stat {
+          background: rgba(30, 41, 59, 0.7);
+          border-radius: 12px;
+          padding: 14px;
+          text-align: center;
+        }
+        .scoreboard-stats .stat-label {
+          display: block;
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #94a3b8;
+          margin-bottom: 6px;
+        }
+        .scoreboard-stats .stat-value {
+          font-size: 24px;
+          font-weight: 700;
+          color: #f8fafc;
+        }
+        .scoreboard-save {
+          display: none;
+          margin-bottom: 16px;
+        }
+        .scoreboard-save.active {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .scoreboard-save label {
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #94a3b8;
+        }
+        .scoreboard-save input {
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid rgba(148, 163, 184, 0.4);
+          background: rgba(15, 23, 42, 0.8);
+          color: #f8fafc;
+        }
+        .scoreboard-save button {
+          align-self: flex-start;
+          background: linear-gradient(135deg, #22d3ee, #3b82f6);
+          border: none;
+          border-radius: 999px;
+          padding: 8px 18px;
+          color: #fff;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .scoreboard-list {
+          list-style: none;
+          padding: 0;
+          margin: 0 0 16px;
+        }
+        .scoreboard-list li {
+          display: grid;
+          grid-template-columns: 36px 1fr auto auto;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          background: rgba(30, 41, 59, 0.55);
+          margin-bottom: 8px;
+          color: #cbd5f5;
+        }
+        .scoreboard-list li span.rank {
+          font-weight: 600;
+          color: #94a3b8;
+        }
+        .scoreboard-list li span.score {
+          font-weight: 700;
+          color: #f8fafc;
+        }
+        .scoreboard-list li span.level {
+          font-size: 12px;
+          color: #94a3b8;
+        }
+        .scoreboard-list li.empty {
+          text-align: center;
+          grid-template-columns: 1fr;
+        }
+        .scoreboard-footer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 16px;
+          flex-wrap: wrap;
+        }
+        .scoreboard-actions {
+          display: flex;
+          gap: 10px;
+        }
+        #scoreboard-continue {
+          display: none;
+        }
+        #scoreboard-continue.primary {
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          border: none;
+          border-radius: 999px;
+          padding: 8px 18px;
+          color: #fff;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        #scoreboard-close {
+          background: rgba(100, 116, 139, 0.25);
+          border: 1px solid rgba(148, 163, 184, 0.5);
+          border-radius: 999px;
+          padding: 8px 16px;
+          color: #e2e8f0;
+          cursor: pointer;
+        }
         .modal-content h2 {
           margin: 0 0 18px;
           font-size: 26px;
@@ -245,7 +368,7 @@
 
       <div id="controls">
         <div>Controls: arrows / mouse - Magic: press F</div>
-        <div class="btn-row"><button id="start-btn">Start</button> <button id="pause-btn">Pause</button> <button id="restart-btn">Restart</button> <button id="audio-btn">Audio: on</button></div>
+        <div class="btn-row"><button id="start-btn">Start</button> <button id="pause-btn">Pause</button> <button id="restart-btn">Restart</button> <button id="audio-btn">Audio: on</button> <button id="scoreboard-btn">Scoreboard</button></div>
         <div id="selector-buttons">
           <button id="level-open-btn">Select Level</button>
           <button id="paddle-open-btn">Select Paddle</button>
@@ -279,6 +402,30 @@
           <div class="modal-footer">
             <span id="paddle-details">Select a paddle to inspect its stats.</span>
             <button id="select-confirm" disabled>Confirm</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="scoreboard-modal" class="modal hidden">
+        <div class="modal-content scoreboard-content">
+          <h2>Scoreboard</h2>
+          <div class="scoreboard-stats">
+            <div class="stat"><span class="stat-label">Score</span><span class="stat-value" id="scoreboard-score">0</span></div>
+            <div class="stat"><span class="stat-label">Best</span><span class="stat-value" id="scoreboard-best">0</span></div>
+            <div class="stat"><span class="stat-label">Level</span><span class="stat-value" id="scoreboard-level">1</span></div>
+          </div>
+          <div class="scoreboard-save" id="scoreboard-save-section">
+            <label for="scoreboard-name">Player name</label>
+            <input id="scoreboard-name" type="text" maxlength="18" placeholder="Your name" />
+            <button id="scoreboard-save">Save score</button>
+          </div>
+          <ul class="scoreboard-list" id="scoreboard-list"></ul>
+          <div class="modal-footer scoreboard-footer">
+            <span id="scoreboard-summary"></span>
+            <div class="scoreboard-actions">
+              <button id="scoreboard-continue" class="primary">Continue</button>
+              <button id="scoreboard-close">Close</button>
+            </div>
           </div>
         </div>
       </div>

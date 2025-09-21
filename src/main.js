@@ -1,263 +1,80 @@
-import { paddleProfiles } from './config/paddles.js';
+import { initScene } from './core/scene.js';
+import { initPaddle } from './entities/paddle.js';
+import { initBall } from './entities/ball.js';
+import { initAudioSystem } from './audio/index.js';
+import { paddleProfiles as paddleProfilesConfig } from './config/paddles.js';
 import { createDifficultyProfiles } from './config/difficulties.js';
 
-// Basic scene + renderer
-        var scene = new THREE.Scene();
-        var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 0 , 20);
-        var target_view = new THREE.Vector3(0, 0, 0);
-        camera.lookAt(target_view);
+const canvas = document.getElementById('game-canvas');
+const sceneSetup = initScene({ window, canvas });
+const {
+  scene,
+  camera,
+  renderer,
+  clock,
+  cameraBasePosition,
+  themeGroup,
+  light,
+  ambientLight,
+  backgroundUniforms,
+  backgroundSphere,
+  textureLoader,
+  getRGBELoader,
+  getGLTFLoader,
+  getParticleTexture,
+  getBrickTexture,
+  applySkyTexture,
+  setSkyTexture,
+} = sceneSetup;
 
-        var renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("game-canvas"), antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setClearColor(0x111827);
-        renderer.outputEncoding = THREE.sRGBEncoding;
-        var clock = new THREE.Clock();
-        var cameraBasePosition = new THREE.Vector3(0, -1.4, 20);
-        camera.position.copy(cameraBasePosition);
+const cameraTarget = new THREE.Vector3(0, 0, 0);
+camera.lookAt(cameraTarget);
 
-        // Light
-        var light = new THREE.PointLight(0xffffff, 1.2, 120);
-        light.position.set(0, 0, 12);
-        scene.add(light);
-        var ambientLight = new THREE.AmbientLight(0x334155, 0.7);
-        scene.add(ambientLight);
+const paddleSetup = initPaddle({ scene, getGLTFLoader });
+const {
+  paddle,
+  placeholderMaterial: paddlePlaceholderMaterial,
+  glowMaterial: paddleGlowMaterial,
+  frameMaterial: paddleFrameMaterial,
+  strutMaterial: paddleStrutMaterial,
+  light: paddleLight,
+  placeholderParts: paddlePlaceholderParts,
+} = paddleSetup;
 
-        var themeGroup = new THREE.Group();
-        scene.add(themeGroup);
+const ballSetup = initBall({ scene });
+const {
+  ball,
+  ballMaterial,
+  ballGlow,
+  ballLight,
+  ballBaseColor,
+  ballBaseEmissive,
+  ballBaseEmissiveIntensity,
+  ballGlowBaseColor,
+  ballGlowBaseOpacity,
+  ballLightBaseColor,
+  ballLightBaseIntensity,
+} = ballSetup;
 
-        // Background dome with soft gradient
-        var backgroundUniforms = {
-          colorTop: { value: new THREE.Color(0x0b1a32) },
-          colorBottom: { value: new THREE.Color(0x111827) },
-          time: { value: 0 }
-        };
+const measurePaddleHitRadius = () => {
+  const bbox = new THREE.Box3().setFromObject(paddle);
+  const size = bbox.getSize(new THREE.Vector3());
+  return size.x ? Math.max(2.6, size.x / 2) : 3.2;
+};
 
-        function getRGBELoader(){
-          if(hdriLoader) return hdriLoader;
-          if(typeof THREE.RGBELoader === 'function'){
-            hdriLoader = new THREE.RGBELoader();
-            hdriLoader.setDataType(THREE.UnsignedByteType);
-          }
-          return hdriLoader;
-        }
-        var backgroundMaterial = new THREE.ShaderMaterial({
-          side: THREE.BackSide,
-          uniforms: backgroundUniforms,
-          vertexShader: `
-            varying float vHeight;
-            void main(){
-              vHeight = normalize(position).y * 0.5 + 0.5;
-              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-          `,
-          fragmentShader: `
-            uniform vec3 colorTop;
-            uniform vec3 colorBottom;
-            uniform float time;
-            varying float vHeight;
-            void main(){
-              float wave = sin(time * 0.1 + vHeight * 5.0) * 0.04;
-              float mixVal = smoothstep(0.0, 1.0, vHeight + wave);
-              vec3 col = mix(colorBottom, colorTop, mixVal);
-              gl_FragColor = vec4(col, 1.0);
-            }
-          `
-        });
-        var backgroundSphere = new THREE.Mesh(new THREE.SphereGeometry(220, 48, 32), backgroundMaterial);
-        scene.add(backgroundSphere);
+const paddleState = {
+  hitRadius: measurePaddleHitRadius(),
+  velocity: 0,
+  targetX: paddle.position.x,
+  mouseTargetX: 0,
+  mouseControlActive: false,
+  smoothFactor: 0.18,
+  speedCap: 2.4,
+};
 
-        // Paddle (groupe + placeholder)
-        var paddle = new THREE.Group();
-        var paddlePlaceholderMaterial = new THREE.MeshStandardMaterial({ color: 0x60a5fa, metalness: 0.55, roughness: 0.3, emissive: 0x2563eb, emissiveIntensity: 0.5 });
-        var paddleCenter = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 5.5, 32), paddlePlaceholderMaterial);
-        paddleCenter.rotation.z = Math.PI / 2;
-        var paddleCapLeft = new THREE.Mesh(new THREE.SphereGeometry(0.7, 28, 20), paddlePlaceholderMaterial);
-        var paddleCapRight = paddleCapLeft.clone();
-        paddleCapLeft.position.set(-2.8, 0, 0.2);
-        paddleCapRight.position.set(2.8, 0, 0.2);
-        paddle.add(paddleCenter);
-        paddle.add(paddleCapLeft);
-        paddle.add(paddleCapRight);
-        var paddleGlowMaterial = new THREE.MeshBasicMaterial({ color: 0xbae6fd, transparent: true, opacity: 0.32 });
-        var paddleGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 6.2, 32), paddleGlowMaterial);
-        paddleGlow.rotation.z = Math.PI / 2;
-        paddle.add(paddleGlow);
-        var paddleLight = new THREE.PointLight(0x93c5fd, 1.4, 18);
-        paddleLight.position.set(0, 0, 1.2);
-        paddle.add(paddleLight);
-        var paddleFrameMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x1f4ed8, emissiveIntensity: 0.25, metalness: 0.8, roughness: 0.15 });
-        var paddleFrame = new THREE.Mesh(new THREE.TorusGeometry(3, 0.15, 16, 48), paddleFrameMaterial);
-        paddleFrame.rotation.set(Math.PI / 2, 0, 0);
-        paddleFrame.position.set(0, 0, -0.3);
-        paddle.add(paddleFrame);
-        var paddleStrutMaterial = new THREE.MeshStandardMaterial({ color: 0xeff6ff, metalness: 0.7, roughness: 0.3, emissive: 0x1d4ed8, emissiveIntensity: 0.18 });
-        var strutGeo = new THREE.BoxGeometry(0.3, 0.3, 1.6);
-        var strutLeft = new THREE.Mesh(strutGeo, paddleStrutMaterial);
-        var strutRight = strutLeft.clone();
-        strutLeft.position.set(-2.2, 0, -0.2);
-        strutRight.position.set(2.2, 0, -0.2);
-        paddle.add(strutLeft);
-        paddle.add(strutRight);
-        paddle.position.set(0, -10, 0);
-        scene.add(paddle);
-        var paddleModel = null;
-        var paddlePlaceholderParts = [paddleCenter, paddleCapLeft, paddleCapRight, paddleGlow, paddleFrame, strutLeft, strutRight];
-        var paddleHitRadius = 3.2;
-        var paddleVelocity = 0;
-        var paddleTargetX = 0;
-        var mouseTargetX = 0;
-        var mouseControlActive = false;
-        var paddleSmoothFactor = 0.18;
-        var paddleSpeedCap = 2.4;
-        paddleTargetX = paddle.position.x;
-        updatePaddleHitRadius();
-        loadPaddleModel();
+var paddleProfiles = paddleProfilesConfig;
 
-        // Ball + light aura
-        var ballGeometry = new THREE.IcosahedronGeometry(0.55, 2);
-        var ballMaterial = new THREE.MeshStandardMaterial({
-          color: 0x60a5fa,
-          emissive: 0x2f88ff,
-          emissiveIntensity: 0.65,
-          metalness: 0.55,
-          roughness: 0.25
-        });
-        var ball = new THREE.Mesh(ballGeometry, ballMaterial);
-        ball.position.set(0, -8, 0);
-        var ballGlow = new THREE.Mesh(
-          new THREE.SphereGeometry(0.7, 24, 18),
-          new THREE.MeshBasicMaterial({ color: 0x90cdf4, transparent: true, opacity: 0.25 })
-        );
-        ball.add(ballGlow);
-        var ballLight = new THREE.PointLight(0x6ec1ff, 1.3, 12);
-        ballLight.position.set(0, 0, 0.5);
-        ball.add(ballLight);
-        scene.add(ball);
-        var ballBaseColor = ballMaterial.color.clone();
-        var ballBaseEmissive = ballMaterial.emissive.clone();
-        var ballBaseEmissiveIntensity = ballMaterial.emissiveIntensity;
-        var ballGlowBaseColor = ballGlow.material.color.clone();
-        var ballGlowBaseOpacity = ballGlow.material.opacity;
-        var ballLightBaseColor = ballLight.color.clone();
-        var ballLightBaseIntensity = ballLight.intensity;
-
-        var textureLoader = new THREE.TextureLoader();
-        textureLoader.setCrossOrigin('anonymous');
-        var hdriLoader = null;
-        var gltfLoader = null;
-        var brickTextureCache = {};
-        var skyTextureCache = {};
-        var particleTextures = {};
-
-        function getGLTFLoader(onReady, attempt){
-          attempt = attempt || 0;
-          if(typeof THREE.GLTFLoader === 'function'){
-            if(!gltfLoader){
-              try {
-                gltfLoader = new THREE.GLTFLoader();
-              } catch(err){
-                console.warn('GLTFLoader init failed', err);
-                gltfLoader = null;
-              }
-            }
-            if(gltfLoader){
-              onReady(gltfLoader);
-              return;
-            }
-          }
-          if(attempt >= 25){
-            console.warn('GLTFLoader non disponible: utilisation des placeholders.');
-            onReady(null);
-            return;
-          }
-          setTimeout(function(){ getGLTFLoader(onReady, attempt + 1); }, 200);
-        }
-
-        function getParticleTexture(hex){
-          if(!hex) hex = '#ffffff';
-          if(particleTextures[hex]) return particleTextures[hex];
-          var size = 72;
-          var canvas = document.createElement('canvas');
-          canvas.width = canvas.height = size;
-          var ctx = canvas.getContext('2d');
-          var gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-          var color = new THREE.Color(hex);
-          var inner = 'rgba(' + Math.round(Math.min(255, color.r * 280)) + ',' + Math.round(Math.min(255, color.g * 280)) + ',' + Math.round(Math.min(255, color.b * 280)) + ',1)';
-          var mid = 'rgba(' + Math.round(color.r * 255) + ',' + Math.round(color.g * 255) + ',' + Math.round(color.b * 255) + ',0.6)';
-          var outer = 'rgba(' + Math.round(color.r * 255) + ',' + Math.round(color.g * 255) + ',' + Math.round(color.b * 255) + ',0)';
-          gradient.addColorStop(0, inner);
-          gradient.addColorStop(0.45, mid);
-          gradient.addColorStop(1, outer);
-          ctx.fillStyle = gradient;
-          ctx.fillRect(0,0,size,size);
-          var texture = new THREE.CanvasTexture(canvas);
-          texture.magFilter = THREE.LinearFilter;
-          texture.minFilter = THREE.LinearFilter;
-          texture.needsUpdate = true;
-          particleTextures[hex] = texture;
-          return texture;
-        }
-
-        function getBrickTexture(url){
-          if(!url) return null;
-          if(brickTextureCache[url]) return brickTextureCache[url];
-          var tex = textureLoader.load(url, function(t){
-            t.encoding = THREE.sRGBEncoding;
-            t.wrapS = t.wrapT = THREE.RepeatWrapping;
-            t.repeat.set(1.2, 0.8);
-            if(renderer && renderer.capabilities){
-              t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
-            }
-          });
-          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-          brickTextureCache[url] = tex;
-          return tex;
-        }
-
-        function applySkyTexture(theme, tex){
-          if(!tex){
-            scene.background = null;
-            scene.environment = null;
-            backgroundSphere.visible = true;
-            return;
-          }
-          scene.background = tex;
-          scene.environment = tex;
-          backgroundSphere.visible = false;
-        }
-
-        function setSkyTexture(theme){
-          var bg = theme.background || {};
-          var url = bg.sky;
-          if(!url){
-            applySkyTexture(theme, null);
-            return;
-          }
-          var cached = skyTextureCache[url];
-          if(cached && cached.isTexture){
-            applySkyTexture(theme, cached);
-            return;
-          }
-          textureLoader.load(url, function(tex){
-            tex.encoding = THREE.sRGBEncoding;
-            tex.mapping = THREE.EquirectangularReflectionMapping;
-            if(renderer && renderer.capabilities){
-              tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
-            }
-            skyTextureCache[url] = tex;
-            if(currentTheme === theme){
-              applySkyTexture(theme, tex);
-            }
-          }, undefined, function(){
-            skyTextureCache[url] = null;
-            if(currentTheme === theme){
-              applySkyTexture(theme, null);
-            }
-          });
-        }
-
-        // Bricks group
+// Bricks group
         var blockGeometry = new THREE.BoxGeometry(1, 0.6, 0.5, 2, 2, 2);
         var brickGroup = new THREE.Group();
         scene.add(brickGroup);
@@ -284,20 +101,6 @@ import { createDifficultyProfiles } from './config/difficulties.js';
         var stageBanner = document.getElementById('scene-banner');
         var currentThemeMixer = null;
         var currentThemeAnimation = null;
-        var audioEnabled = true;
-        var audioUnlocked = false;
-        var audioVolume = 0.8;
-        var audioCtx = null;
-        var masterGain = null;
-        var sfxGain = null;
-        var musicGain = null;
-        var musicNodes = [];
-        var currentMusicSource = null;
-        var musicBuffers = {};
-        var musicTrackLoading = {};
-        var currentMusicTheme = null;
-        var pendingMusicTheme = null;
-        var musicTimer = null;
         var fireParticles = null;
         var fireParticleData = [];
         var fireParticlePositions = null;
@@ -359,6 +162,7 @@ import { createDifficultyProfiles } from './config/difficulties.js';
           var keys = Object.keys(achievements).filter(k => achievements[k]).join(', ');
           document.getElementById('ach-list').textContent = keys.length ? keys : '—';
           updateQuestHUD();
+          refreshScoreboard();
         }
 
         function showMessage(text, timeout){
@@ -483,15 +287,51 @@ import { createDifficultyProfiles } from './config/difficulties.js';
         var selectConfirm = document.getElementById('select-confirm');
         var paddleDetails = document.getElementById('paddle-details');
         var abilityStatusEl = document.getElementById('ability-status');
+        var scoreboardModal = document.getElementById('scoreboard-modal');
+        var scoreboardSummary = document.getElementById('scoreboard-summary');
+        var scoreboardScore = document.getElementById('scoreboard-score');
+        var scoreboardBest = document.getElementById('scoreboard-best');
+        var scoreboardLevel = document.getElementById('scoreboard-level');
+        var scoreboardBtn = document.getElementById('scoreboard-btn');
+        var scoreboardContinue = document.getElementById('scoreboard-continue');
+        var scoreboardClose = document.getElementById('scoreboard-close');
+        var scoreboardPendingCallback = null;
+        var scoreboardPreviousState = null;
+
+        if(scoreboardBtn){
+          scoreboardBtn.addEventListener('click', function(){
+            openScoreboard('Current run', { pauseState: 'paused' });
+          });
+        }
+        if(scoreboardClose){
+          scoreboardClose.addEventListener('click', function(){
+            if(scoreboardPendingCallback){
+              closeScoreboard(true);
+            } else {
+              closeScoreboard(false);
+            }
+          });
+        }
+        if(scoreboardContinue){
+          scoreboardContinue.addEventListener('click', function(){
+            closeScoreboard(true);
+          });
+        }
+        if(scoreboardModal){
+          scoreboardModal.addEventListener('click', function(evt){
+            if(evt.target === scoreboardModal && !scoreboardPendingCallback){
+              closeScoreboard(false);
+            }
+          });
+        }
+
 
         function openSelectionModal(){
           selectionModal.classList.remove('hidden');
-          if(audioEnabled){
-            pendingMusicTheme = 'Start Screen';
-            if(!audioUnlocked){
-              ensureAudioReady();
-            } else {
-              startThemeMusic('Start Screen');
+          if(audioState.enabled){
+            queueThemeMusic({ name: 'Start Screen' });
+            if(!audioState.unlocked){
+              ensureAudioReady(true);
             }
           }
           highlightSelectedPaddleCard();
@@ -507,8 +347,8 @@ import { createDifficultyProfiles } from './config/difficulties.js';
           selectedPaddleKey = key;
           selectedPaddleProfile = profile;
           paddle.scale.set(profile.scale, 1, 1);
-          paddleSmoothFactor = profile.smooth;
-          paddleSpeedCap = profile.speedCap;
+          paddleState.smoothFactor = profile.smooth;
+          paddleState.speedCap = profile.speedCap;
           paddlePlaceholderMaterial.color.setHex(profile.colors.primary);
           paddlePlaceholderMaterial.emissive.setHex(profile.colors.emissive);
           paddleGlowMaterial.color.setHex(profile.colors.glow);
@@ -522,7 +362,7 @@ import { createDifficultyProfiles } from './config/difficulties.js';
           paddleLight.intensity = 1.5;
           updatePaddleHitRadius();
           clampPaddlePosition();
-          paddleTargetX = paddle.position.x;
+          paddleState.targetX = paddle.position.x;
           resetAbilityState();
           updateAbilityUI();
           updatePaddleButtonLabel();
@@ -564,448 +404,84 @@ import { createDifficultyProfiles } from './config/difficulties.js';
           closeSelectionModal();
         });
 
-        var sfxPresets = {
-          paddle: { freq: 540, freqEnd: 420, attack: 0.01, release: 0.18, gain: 0.35, type: 'triangle' },
-          block: { freq: 500, freqEnd: 360, attack: 0.015, release: 0.22, gain: 0.32, type: 'sine' },
-          powerup: { freq: 660, freqEnd: 880, attack: 0.02, release: 0.45, gain: 0.28, type: 'sine' },
-          lifeLost: { freq: 220, freqEnd: 120, attack: 0.03, release: 0.8, gain: 0.35, type: 'sawtooth' },
-          levelUp: { freq: 520, freqEnd: 780, attack: 0.02, release: 0.5, gain: 0.32, type: 'triangle' },
-          gameOver: { freq: 150, freqEnd: 70, attack: 0.04, release: 1.2, gain: 0.38, type: 'triangle' },
-          magicFire: { freq: 420, freqEnd: 920, attack: 0.01, release: 0.6, gain: 0.5, type: 'sawtooth' },
-          magicIce: { freq: 540, freqEnd: 260, attack: 0.02, release: 0.8, gain: 0.42, type: 'triangle' },
-          magicSlow: { freq: 320, freqEnd: 240, attack: 0.05, release: 1.1, gain: 0.38, type: 'sine' }
-        };
+const audio = initAudioSystem({ window });
+const {
+  state: audioState,
+  sfxPresets,
+  musicPresets,
+  musicTracks,
+  initAudioEngine,
+  applyAudioVolume,
+  setMasterVolume,
+  triggerTone,
+  playSfx,
+  stopThemeMusic,
+  loadMusicBuffer,
+  playProceduralMusic,
+  startThemeMusic,
+  ensureAudioReady,
+  resumeMusic,
+  pauseMusic,
+  toggleAudio,
+} = audio;
 
-        var musicPresets = {
-          'Synthwave Nebula': {
-            volume: 0.26,
-            waveform: 'sine',
-            noteGain: 0.08,
-            filter: { type: 'lowpass', freq: 780, Q: 0.7 },
-            chords: [
-              { notes: [220, 330, 440], duration: 4.5, attack: 1.2, release: 1.6, pause: 1.3 },
-              { notes: [247, 370, 494], duration: 4.6, attack: 1.4, release: 1.7, pause: 1.4 },
-              { notes: [196, 294, 392], duration: 5.2, attack: 1.3, release: 1.9, pause: 1.6 }
-            ]
-          },
-          'Cosmic Garden': {
-            volume: 0.23,
-            waveform: 'triangle',
-            noteGain: 0.07,
-            filter: { type: 'lowpass', freq: 560, Q: 0.9 },
-            chords: [
-              { notes: [261.63, 329.63, 392.00], duration: 6.0, attack: 1.8, release: 2.2, pause: 1.8 },
-              { notes: [293.66, 369.99, 440.00], duration: 5.6, attack: 1.6, release: 2.0, pause: 1.5 }
-            ]
-          },
-          'Orbital Station': {
-            volume: 0.25,
-            waveform: 'sawtooth',
-            noteGain: 0.065,
-            filter: { type: 'lowpass', freq: 980, Q: 0.6 },
-            chords: [
-              { notes: [207.65, 311.13, 415.30], duration: 5.2, attack: 1.2, release: 1.8, pause: 1.2 },
-              { notes: [233.08, 349.23, 466.16], duration: 4.8, attack: 1.1, release: 1.7, pause: 1.1 },
-              { notes: [185.00, 277.18, 369.99], duration: 5.4, attack: 1.4, release: 2.0, pause: 1.3 }
-            ]
-          },
-          default: {
-            volume: 0.2,
-            waveform: 'sine',
-            noteGain: 0.07,
-            filter: { type: 'lowpass', freq: 650, Q: 0.8 },
-            chords: [
-              { notes: [220, 330, 440], duration: 5.4, attack: 1.3, release: 1.9, pause: 1.5 }
-            ]
-          }
-        };
+applyAudioVolume();
 
-        var musicTracks = {
-          'Start Screen': {
-            url: 'resources/start.mp3',
-            volume: 0.2,
-            loop: true
-          },
-          'Synthwave Nebula': {
-            url: 'resources/background1.mp3',
-            volume: 0.26,
-            loop: true
-          },
-          'Cosmic Garden': {
-            url: 'resources/background2.mp3',
-            volume: 0.24,
-            loop: true
-          },
-          'Orbital Station': {
-            url: 'resources/background3.mp3',
-            volume: 0.25,
-            loop: true
-          },
-          'Aurora Peaks': {
-            url: 'resources/background1.mp3',
-            volume: 0.22,
-            loop: true
-          },
-          'Desert Mirage': {
-            url: 'resources/background2.mp3',
-            volume: 0.27,
-            loop: true
-          },
-          'Neon Shards': {
-            url: 'resources/background3.mp3',
-            volume: 0.28,
-            loop: true
-          },
-          default: {
-            url: 'resources/background1.mp3',
-            volume: 0.23,
-            loop: true
-          }
-        };
+function queueThemeMusic(theme){
+  if(!theme) return;
+  var themeKey = theme.musicTheme || theme.name;
+  if(!themeKey) return;
+  audioState.pendingMusicTheme = themeKey;
+  if(audioState.unlocked){
+    startThemeMusic(themeKey);
+  }
+}
 
-        pendingMusicTheme = 'Start Screen';
+function refreshScoreboard(){
+  if(!scoreboardScore) return;
+  scoreboardScore.textContent = score;
+  scoreboardBest.textContent = bestScore;
+  scoreboardLevel.textContent = level;
+}
 
-        function initAudioEngine(){
-          if(audioCtx) return;
-          var AudioCtx = window.AudioContext || window.webkitAudioContext;
-          if(!AudioCtx) {
-          console.warn('AudioContext not supported in this browser.');
-            audioEnabled = false;
-            return;
-          }
-          audioCtx = new AudioCtx();
-          masterGain = audioCtx.createGain();
-          masterGain.connect(audioCtx.destination);
-          sfxGain = audioCtx.createGain();
-          sfxGain.connect(masterGain);
-          musicGain = audioCtx.createGain();
-          musicGain.gain.value = 0;
-          musicGain.connect(masterGain);
-          applyAudioVolume();
-        }
+function openScoreboard(summary, options){
+  if(!scoreboardModal) return;
+  options = options || {};
+  scoreboardPreviousState = null;
+  if(options.pauseState){
+    scoreboardPreviousState = gameState;
+    gameState = options.pauseState;
+  }
+  refreshScoreboard();
+  if(scoreboardSummary){ scoreboardSummary.textContent = summary || ''; }
+  if(options.onContinue){
+    scoreboardPendingCallback = options.onContinue;
+    if(scoreboardContinue){ scoreboardContinue.style.display = 'inline-flex'; }
+  } else {
+    scoreboardPendingCallback = null;
+    if(scoreboardContinue){ scoreboardContinue.style.display = 'none'; }
+  }
+  scoreboardModal.classList.remove('hidden');
+}
 
-        function applyAudioVolume(){
-          if(!masterGain) return;
-          var target = audioEnabled ? audioVolume : 0;
-          if(audioCtx){
-            masterGain.gain.setTargetAtTime(target, audioCtx.currentTime, 0.08);
-          } else {
-            masterGain.gain.value = target;
-          }
-        }
-
-        function setMasterVolume(value){
-          audioVolume = Math.max(0, Math.min(1, value));
-          applyAudioVolume();
-        }
-
-        function triggerTone(spec){
-          if(!audioCtx || audioCtx.state === 'suspended') return;
-          var osc = audioCtx.createOscillator();
-          var gain = audioCtx.createGain();
-          osc.type = spec.type || 'sine';
-          osc.frequency.value = spec.freq;
-          if(spec.detune) osc.detune.value = spec.detune;
-          var now = audioCtx.currentTime;
-          var attack = spec.attack !== undefined ? spec.attack : 0.02;
-          var release = spec.release !== undefined ? spec.release : (spec.decay || 0.3);
-          var peak = (spec.gain || 0.4);
-          gain.gain.setValueAtTime(0.0001, now);
-          gain.gain.linearRampToValueAtTime(peak, now + attack);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + attack + release);
-          if(spec.freqEnd){
-            osc.frequency.exponentialRampToValueAtTime(spec.freqEnd, now + attack + release);
-          }
-          osc.connect(gain);
-          gain.connect(spec.targetGain || sfxGain);
-          osc.start(now);
-          osc.stop(now + attack + release + 0.05);
-          osc.onended = function(){
-            try { osc.disconnect(); } catch(err){}
-            try { gain.disconnect(); } catch(err){}
-          };
-          return { osc: osc, gain: gain };
-        }
-
-        function playSfx(key){
-          if(!audioEnabled || !audioUnlocked) return;
-          if(!audioCtx) return;
-          var spec = sfxPresets[key];
-          if(!spec) return;
-          if(audioCtx.state === 'suspended'){
-            audioCtx.resume().then(function(){ triggerTone(spec); }).catch(()=>{});
-          } else {
-            triggerTone(spec);
-          }
-        }
-
-        function stopThemeMusic(){
-          if(musicTimer){
-            clearTimeout(musicTimer);
-            musicTimer = null;
-          }
-          if(audioCtx && musicGain){
-            try {
-              musicGain.gain.cancelScheduledValues(audioCtx.currentTime);
-              musicGain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.4);
-            } catch(err) {}
-          }
-          if(currentMusicSource){
-            try { currentMusicSource.stop(); } catch(err) {}
-            try { currentMusicSource.disconnect(); } catch(err) {}
-            currentMusicSource = null;
-          }
-          if(musicNodes.length){
-            var now = audioCtx ? audioCtx.currentTime : 0;
-            musicNodes.forEach(function(node){
-              try {
-                node.gain.gain.cancelScheduledValues(now);
-                node.gain.gain.setTargetAtTime(0.0001, now, 0.5);
-                node.osc.stop(now + 0.8);
-              } catch(err) {}
-              if(node.lfo){
-                try { node.lfo.stop(now + 0.8); } catch(err) {}
-                try { node.lfo.disconnect(); } catch(err) {}
-              }
-              if(node.lfoGain){ try { node.lfoGain.disconnect(); } catch(err) {} }
-              if(node.filter){ try { node.filter.disconnect(); } catch(err) {} }
-              try { node.gain.disconnect(); } catch(err) {}
-              try { node.osc.disconnect(); } catch(err) {}
-            });
-            musicNodes.length = 0;
-          }
-          currentMusicTheme = null;
-          pendingMusicTheme = null;
-        }
-
-        function loadMusicBuffer(url){
-          if(musicBuffers[url]) return Promise.resolve(musicBuffers[url]);
-          if(musicTrackLoading[url]) return musicTrackLoading[url];
-          if(!audioCtx) return Promise.reject(new Error('Audio context not ready'));
-          var pending = fetch(url).then(function(response){
-            if(!response.ok){
-              throw new Error('Music request failed with status ' + response.status);
-            }
-            return response.arrayBuffer();
-          }).then(function(data){
-            return new Promise(function(resolve, reject){
-              audioCtx.decodeAudioData(data, function(buffer){
-                musicBuffers[url] = buffer;
-                resolve(buffer);
-              }, function(err){ reject(err); });
-            });
-          });
-          musicTrackLoading[url] = pending.then(function(buffer){
-            delete musicTrackLoading[url];
-            return buffer;
-          }, function(err){
-            delete musicTrackLoading[url];
-            throw err;
-          });
-          return musicTrackLoading[url];
-        }
-
-        function playProceduralMusic(themeName){
-          var preset = musicPresets[themeName] || musicPresets.default;
-          if(!preset || !preset.chords || !preset.chords.length){
-            currentMusicTheme = themeName;
-            pendingMusicTheme = null;
-            return;
-          }
-
-          if(musicGain){
-            var targetVol = preset.volume !== undefined ? preset.volume : 0.3;
-            musicGain.gain.setTargetAtTime(targetVol, audioCtx.currentTime, 0.6);
-          }
-
-          var chordIndex = 0;
-          var waveform = preset.waveform || 'sine';
-          var noteGain = preset.noteGain || 0.12;
-
-          function playChord(){
-            if(!audioCtx || audioCtx.state === 'closed'){ return; }
-            if(musicTimer){ clearTimeout(musicTimer); musicTimer = null; }
-            var data = preset.chords[chordIndex % preset.chords.length];
-            chordIndex++;
-            var now = audioCtx.currentTime;
-            var attack = data.attack || 1.0;
-            var release = data.release || 1.5;
-            var duration = data.duration || 4.0;
-            var pause = data.pause || 1.0;
-
-            data.notes.forEach(function(freq){
-              var osc = audioCtx.createOscillator();
-              osc.type = waveform;
-              osc.frequency.setValueAtTime(freq, now);
-              var gainNode = audioCtx.createGain();
-              gainNode.gain.setValueAtTime(0.0001, now);
-              gainNode.gain.linearRampToValueAtTime(noteGain, now + attack);
-              gainNode.gain.exponentialRampToValueAtTime(0.0001, now + duration + release);
-
-              var filter = null;
-              if(preset.filter){
-                filter = audioCtx.createBiquadFilter();
-                filter.type = preset.filter.type || 'lowpass';
-                filter.frequency.value = preset.filter.freq || 900;
-                filter.Q.value = preset.filter.Q || 1;
-                osc.connect(filter);
-                filter.connect(gainNode);
-              } else {
-                osc.connect(gainNode);
-              }
-
-              if(musicGain){
-                gainNode.connect(musicGain);
-              } else if(masterGain){
-                gainNode.connect(masterGain);
-              } else {
-                gainNode.connect(audioCtx.destination);
-              }
-
-              var entry = { osc: osc, gain: gainNode, filter: filter };
-              osc.onended = function(){
-                try { osc.disconnect(); } catch(err){}
-                try { gainNode.disconnect(); } catch(err){}
-                if(filter){ try { filter.disconnect(); } catch(err){} }
-                var i = musicNodes.indexOf(entry);
-                if(i>=0) musicNodes.splice(i,1);
-              };
-
-              osc.start(now);
-              osc.stop(now + duration + release + 0.2);
-              musicNodes.push(entry);
-            });
-
-            musicTimer = setTimeout(playChord, (duration + pause) * 1000);
-          }
-
-          playChord();
-          currentMusicTheme = themeName;
-          pendingMusicTheme = null;
-        }
-
-        function startThemeMusic(themeName){
-          if(!audioEnabled) return;
-          if(!audioCtx){
-            pendingMusicTheme = themeName;
-            return;
-          }
-          if(audioCtx.state === 'suspended'){
-            audioCtx.resume().then(function(){ startThemeMusic(themeName); }).catch(()=>{});
-            return;
-          }
-
-          var track = musicTracks[themeName] || musicTracks.default;
-          stopThemeMusic();
-          currentMusicTheme = themeName;
-          pendingMusicTheme = null;
-
-          if(track && track.url){
-            var targetVol = track.volume !== undefined ? track.volume : 0.3;
-            if(musicGain){
-              try {
-                musicGain.gain.cancelScheduledValues(audioCtx.currentTime);
-                musicGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-              } catch(err) {}
-            }
-            loadMusicBuffer(track.url).then(function(buffer){
-              if(!audioCtx || audioCtx.state === 'closed') return;
-              if(currentMusicTheme !== themeName) return;
-              var source = audioCtx.createBufferSource();
-              source.buffer = buffer;
-              source.loop = track.loop !== false;
-              if(track.loopStart !== undefined) source.loopStart = track.loopStart;
-              if(track.loopEnd !== undefined) source.loopEnd = track.loopEnd;
-              source.connect(musicGain || masterGain || audioCtx.destination);
-              currentMusicSource = source;
-              source.onended = function(){
-                if(currentMusicSource === source) currentMusicSource = null;
-              };
-              var startAt = audioCtx.currentTime + 0.05;
-              try {
-                source.start(startAt);
-              } catch(err){
-                console.warn('Unable to start streamed music', err);
-              }
-              if(musicGain){
-                musicGain.gain.setTargetAtTime(targetVol, startAt, 0.8);
-              } else if(masterGain){
-                masterGain.gain.setTargetAtTime(targetVol, startAt, 0.8);
-              }
-            }).catch(function(err){
-              console.warn('Falling back to procedural music for theme', themeName, err);
-              playProceduralMusic(themeName);
-            });
-            return;
-          }
-
-          playProceduralMusic(themeName);
-        }
-
-        function queueThemeMusic(theme){
-          pendingMusicTheme = theme.name;
-          if(audioUnlocked && audioCtx) startThemeMusic(theme.name);
-        }
-
-        function resumeMusic(){
-          if(!audioEnabled) return;
-          if(!audioUnlocked) return;
-          if(!audioCtx){
-            initAudioEngine();
-            if(pendingMusicTheme) startThemeMusic(pendingMusicTheme);
-            return;
-          }
-          audioCtx.resume().then(function(){
-            if(pendingMusicTheme && pendingMusicTheme !== currentMusicTheme){
-              startThemeMusic(pendingMusicTheme);
-            }
-          }).catch(function(err){ console.warn('Impossible de reprendre l\'audio', err); });
-        }
-
-        function pauseMusic(){
-          if(audioCtx && audioCtx.state === 'running'){
-            audioCtx.suspend().catch(()=>{});
-          }
-        }
-
-        function ensureAudioReady(force){
-          if(!audioEnabled) return;
-          if(!audioCtx){
-            initAudioEngine();
-          }
-          if(!audioCtx) return;
-          if(audioCtx.state !== 'suspended'){
-            if(!audioUnlocked) audioUnlocked = true;
-            if(pendingMusicTheme && pendingMusicTheme !== currentMusicTheme){
-              startThemeMusic(pendingMusicTheme);
-            }
-            return;
-          }
-          if(audioUnlocked && !force) return;
-          audioCtx.resume().then(function(){
-            audioUnlocked = true;
-            if(pendingMusicTheme) startThemeMusic(pendingMusicTheme);
-          }).catch(function(){
-            audioUnlocked = false;
-          });
-        }
-
-        function toggleAudio(){
-          audioEnabled = !audioEnabled;
-          var btn = document.getElementById('audio-btn');
-          btn.textContent = 'Audio: ' + (audioEnabled ? 'on' : 'off');
-          if(audioEnabled){
-            ensureAudioReady();
-            resumeMusic();
-          } else {
-            pauseMusic();
-          }
-          applyAudioVolume();
-        }
+function closeScoreboard(triggerCallback){
+  if(!scoreboardModal) return;
+  scoreboardModal.classList.add('hidden');
+  if(scoreboardSummary){ scoreboardSummary.textContent = ''; }
+  if(scoreboardPreviousState !== null && gameState !== 'scoreboard'){
+    gameState = scoreboardPreviousState;
+  }
+  scoreboardPreviousState = null;
+  var callback = scoreboardPendingCallback;
+  scoreboardPendingCallback = null;
+  if(triggerCallback && typeof callback === 'function'){
+    callback();
+  }
+}
 
         function enterMenuState(customMessage){
           stopThemeMusic();
-          pendingMusicTheme = 'Start Screen';
+          queueThemeMusic({ name: 'Start Screen' });
           gameState = 'menu';
           var profile = getSelectedDifficulty();
           score = 0;
@@ -1026,8 +502,8 @@ import { createDifficultyProfiles } from './config/difficulties.js';
             stageBanner.textContent = profile.name;
             stageBanner.style.opacity = 0.85;
           }
-          if(audioEnabled){
-            ensureAudioReady();
+          if(audioState.enabled && audioState.unlocked){
+            ensureAudioReady(true);
             resumeMusic();
           }
           updateDifficultyInfo();
@@ -1162,9 +638,7 @@ import { createDifficultyProfiles } from './config/difficulties.js';
         }
 
         function updatePaddleHitRadius(){
-          var bbox = new THREE.Box3().setFromObject(paddle);
-          var size = bbox.getSize(new THREE.Vector3());
-          if(size.x) paddleHitRadius = Math.max(2.6, size.x / 2);
+          paddleState.hitRadius = measurePaddleHitRadius();
         }
 
         function enablePlaceholderPaddle(){
@@ -1186,9 +660,9 @@ import { createDifficultyProfiles } from './config/difficulties.js';
         }
 
         function clampPaddlePosition(){
-          var limit = playfieldHalfWidth - paddleHitRadius;
+          var limit = playfieldHalfWidth - paddleState.hitRadius;
           paddle.position.x = THREE.Math.clamp(paddle.position.x, -limit, limit);
-          paddleTargetX = THREE.Math.clamp(paddleTargetX, -limit, limit);
+          paddleState.targetX = THREE.Math.clamp(paddleState.targetX, -limit, limit);
         }
 
         var levelLayouts = [
@@ -1311,7 +785,7 @@ import { createDifficultyProfiles } from './config/difficulties.js';
           if(!options.preview){
             queueThemeMusic(theme);
           } else {
-            pendingMusicTheme = 'Start Screen';
+            queueThemeMusic({ name: 'Start Screen' });
           }
           setSceneBanner(theme.name);
         }
@@ -1482,15 +956,15 @@ import { createDifficultyProfiles } from './config/difficulties.js';
             updateAbilityUI();
             return;
           }
-          if (event.code === "ArrowLeft" || event.code === 'KeyA'){ keyState.left = true; mouseControlActive = false; }
-          else if (event.code === "ArrowRight" || event.code === 'KeyD'){ keyState.right = true; mouseControlActive = false; }
+          if (event.code === "ArrowLeft" || event.code === 'KeyA'){ keyState.left = true; paddleState.mouseControlActive = false; }
+          else if (event.code === "ArrowRight" || event.code === 'KeyD'){ keyState.right = true; paddleState.mouseControlActive = false; }
         });
         document.addEventListener("keyup", function(event){
           if (event.code === "ArrowLeft" || event.code === 'KeyA'){ keyState.left = false; }
           else if (event.code === "ArrowRight" || event.code === 'KeyD'){ keyState.right = false; }
           else if (event.code === 'KeyF'){ magicKeyPressed = false; }
           if(!keyState.left && !keyState.right){
-            paddleTargetX = mouseControlActive ? mouseTargetX : paddle.position.x;
+            paddleState.targetX = paddleState.mouseControlActive ? paddleState.mouseTargetX : paddle.position.x;
           }
         });
         var magicKeyPressed = false;
@@ -1503,10 +977,10 @@ import { createDifficultyProfiles } from './config/difficulties.js';
         window.addEventListener('mousemove', function(e){
           // convert screen x to world x (approx)
           var ratio = (e.clientX / window.innerWidth) * 2 - 1;
-          var limit = playfieldHalfWidth - paddleHitRadius;
-          mouseTargetX = THREE.Math.clamp(ratio * playfieldHalfWidth, -limit, limit);
-          mouseControlActive = true;
-          paddleTargetX = mouseTargetX;
+          var limit = playfieldHalfWidth - paddleState.hitRadius;
+          paddleState.mouseTargetX = THREE.Math.clamp(ratio * playfieldHalfWidth, -limit, limit);
+          paddleState.mouseControlActive = true;
+          paddleState.targetX = paddleState.mouseTargetX;
         });
 
         // Buttons
@@ -1521,9 +995,9 @@ import { createDifficultyProfiles } from './config/difficulties.js';
         });
         document.getElementById('audio-btn').addEventListener('click', toggleAudio);
         var volumeSlider = document.getElementById('volume-range');
-        volumeSlider.value = Math.round(audioVolume * 100);
+        volumeSlider.value = Math.round(audioState.volume * 100);
         volumeSlider.addEventListener('input', function(e){
-          if(!audioUnlocked && audioEnabled) ensureAudioReady();
+          if(!audioState.unlocked && audioState.enabled) ensureAudioReady(true);
           setMasterVolume((parseInt(e.target.value, 10) || 0) / 100);
         });
 
@@ -1578,9 +1052,11 @@ import { createDifficultyProfiles } from './config/difficulties.js';
             updateHUD();
             buildLevel({ preview: true });
           }
-          if(gameState === 'menu' && audioEnabled && audioUnlocked){
-            pendingMusicTheme = 'Start Screen';
-            resumeMusic();
+          if(gameState === 'menu' && audioState.enabled){
+            queueThemeMusic({ name: 'Start Screen' });
+            if(audioState.unlocked){
+              resumeMusic();
+            }
           }
         }
 
@@ -1653,7 +1129,7 @@ import { createDifficultyProfiles } from './config/difficulties.js';
           }
           var difficulty = getSelectedDifficulty();
           stopThemeMusic();
-          ensureAudioReady();
+          ensureAudioReady(true);
           playSfx('levelUp');
           score = 0;
           level = difficulty.startLevel;
@@ -1669,8 +1145,8 @@ import { createDifficultyProfiles } from './config/difficulties.js';
           buildLevel();
           resetBallPosition();
           paddle.position.x = 0;
-          paddleTargetX = 0;
-          paddleVelocity = 0;
+          paddleState.targetX = 0;
+          paddleState.velocity = 0;
           clampPaddlePosition();
           resetAbilityState();
           updateAbilityUI();
@@ -1755,19 +1231,29 @@ import { createDifficultyProfiles } from './config/difficulties.js';
         }
 
         function handleLevelCleared(){
+          if(gameState === 'scoreboard') return;
           var difficulty = getSelectedDifficulty();
+          var completedLevel = level;
           level++;
+          gameState = 'scoreboard';
           resetCombo();
           while(powerUps.length){ var dropped = powerUps.pop(); scene.remove(dropped); }
+          updateHUD();
+          openScoreboard('Level ' + completedLevel + ' cleared!', { onContinue: function(){ prepareNextLevel(difficulty); } });
+        }
+
+        function prepareNextLevel(difficulty){
           buildLevel();
           var baseSeed = defaultBaseBallSpeed * (difficulty.speedMultiplier || 1);
           var levelsCompleted = Math.max(0, level - (difficulty.startLevel || 1));
           baseBallSpeed = Math.min(baseSeed + levelsCompleted * ballSpeedGrowth, maxBallSpeed * 0.85);
           ballSpeed = baseBallSpeed;
           resetBallPosition();
+          updateHUD();
           var themeLabel = currentTheme ? currentTheme.name : 'Level';
           showMessage('Level ' + level + ' - ' + themeLabel, 1800);
           playSfx('levelUp');
+          gameState = 'playing';
         }
 
         function startBlockFade(mesh, fireMode){
@@ -1872,7 +1358,8 @@ import { createDifficultyProfiles } from './config/difficulties.js';
             fire: fireMode
           });
           if(fireMode){
-            spawnWizzEffect(position, radius, true);
+            var burstRadius = abilityState.fireballRadius || 2.6;
+            spawnWizzEffect(position, burstRadius, true);
           }
         }
 
@@ -1915,7 +1402,7 @@ import { createDifficultyProfiles } from './config/difficulties.js';
           }
 
           // Paddle collision
-          var paddleHalfWidth = paddleHitRadius;
+          var paddleHalfWidth = paddleState.hitRadius;
           var paddleHeight = 1.2;
           if (ball.position.y <= paddle.position.y + paddleHeight && ball.position.y >= paddle.position.y - paddleHeight) {
             if (ball.position.x > paddle.position.x - paddleHalfWidth && ball.position.x < paddle.position.x + paddleHalfWidth) {
@@ -1969,7 +1456,7 @@ import { createDifficultyProfiles } from './config/difficulties.js';
             if(!collectedByBall){
               var dx = Math.abs(up.position.x - paddle.position.x);
               var dy = Math.abs(up.position.y - paddle.position.y);
-              if(dx <= paddleHitRadius + 1 && dy <= 2.2){
+              if(dx <= paddleState.hitRadius + 1 && dy <= 2.2){
                 collectedByPaddle = true;
               }
             }
@@ -2006,15 +1493,15 @@ import { createDifficultyProfiles } from './config/difficulties.js';
           var focusX = THREE.Math.clamp(ball.position.x * 0.12, -2.8, 2.8);
           var desiredLook = tempVec1.set(focusX, focusY, 0);
 
-          target_view.lerp(desiredLook, 0.04);
+          cameraTarget.lerp(desiredLook, 0.04);
 
           var desiredCameraPos = tempVec2.set(
-            cameraBasePosition.x + target_view.x * 0.08,
-            cameraBasePosition.y + target_view.y * 0.12,
+            cameraBasePosition.x + cameraTarget.x * 0.08,
+            cameraBasePosition.y + cameraTarget.y * 0.12,
             cameraBasePosition.z
           );
           camera.position.lerp(desiredCameraPos, 0.04);
-          camera.lookAt(target_view);
+          camera.lookAt(cameraTarget);
         }
 
         // Resize
@@ -2045,25 +1532,25 @@ import { createDifficultyProfiles } from './config/difficulties.js';
         }
 
         function updatePaddleMotion(){
-          var limit = playfieldHalfWidth - paddleHitRadius;
-          paddleTargetX = THREE.Math.clamp(paddleTargetX, -limit, limit);
-          mouseTargetX = THREE.Math.clamp(mouseTargetX, -limit, limit);
+          var limit = playfieldHalfWidth - paddleState.hitRadius;
+          paddleState.targetX = THREE.Math.clamp(paddleState.targetX, -limit, limit);
+          paddleState.mouseTargetX = THREE.Math.clamp(paddleState.mouseTargetX, -limit, limit);
 
           var accel = 0;
           if(keyState.left && !keyState.right) accel -= 2.0;
           if(keyState.right && !keyState.left) accel += 2.0;
 
-          paddleVelocity += accel * 0.14;
-          paddleVelocity *= 0.84;
-          if(mouseControlActive && !(keyState.left || keyState.right)){
-            paddleVelocity += (mouseTargetX - paddle.position.x) * paddleSmoothFactor;
+          paddleState.velocity += accel * 0.14;
+          paddleState.velocity *= 0.84;
+          if(paddleState.mouseControlActive && !(keyState.left || keyState.right)){
+            paddleState.velocity += (paddleState.mouseTargetX - paddle.position.x) * paddleState.smoothFactor;
           }
-          if(Math.abs(paddleVelocity) < 0.01) paddleVelocity = 0;
-          paddleVelocity = THREE.Math.clamp(paddleVelocity, -paddleSpeedCap, paddleSpeedCap);
-          paddle.position.x += paddleVelocity;
+          if(Math.abs(paddleState.velocity) < 0.01) paddleState.velocity = 0;
+          paddleState.velocity = THREE.Math.clamp(paddleState.velocity, -paddleState.speedCap, paddleState.speedCap);
+          paddle.position.x += paddleState.velocity;
           clampPaddlePosition();
           if(!(keyState.left || keyState.right)){
-            paddleTargetX = mouseControlActive ? mouseTargetX : paddle.position.x;
+            paddleState.targetX = paddleState.mouseControlActive ? paddleState.mouseTargetX : paddle.position.x;
           }
         }
 
@@ -2476,7 +1963,7 @@ import { createDifficultyProfiles } from './config/difficulties.js';
         checkForIOInteraction();
 
         function unlockAudioOnInteraction(){
-          if(!audioEnabled) return;
+          if(!audioState.enabled) return;
           ensureAudioReady(true);
           resumeMusic();
         }
