@@ -249,12 +249,12 @@
             <button class="paddle-card" data-key="titan">
               <div class="title">Crimson Titan</div>
               <div class="stats">Wide reach - Heavy control</div>
-              <div class="ability">Ability: Energy shield</div>
+              <div class="ability">Ability: Inferno strike — fiery ball burns nearby bricks</div>
             </button>
             <button class="paddle-card" data-key="aero">
               <div class="title">Azure Aero</div>
               <div class="stats">Ultra fast - Slim profile</div>
-              <div class="ability">Ability: Instant dash</div>
+              <div class="ability">Ability: Ice barrier — conjures a rebound wall</div>
             </button>
             <button class="paddle-card" data-key="mystic">
               <div class="title">Violet Mystic</div>
@@ -433,6 +433,13 @@
         ballLight.position.set(0, 0, 0.5);
         ball.add(ballLight);
         scene.add(ball);
+        var ballBaseColor = ballMaterial.color.clone();
+        var ballBaseEmissive = ballMaterial.emissive.clone();
+        var ballBaseEmissiveIntensity = ballMaterial.emissiveIntensity;
+        var ballGlowBaseColor = ballGlow.material.color.clone();
+        var ballGlowBaseOpacity = ballGlow.material.opacity;
+        var ballLightBaseColor = ballLight.color.clone();
+        var ballLightBaseIntensity = ballLight.intensity;
 
         var textureLoader = new THREE.TextureLoader();
         textureLoader.setCrossOrigin('anonymous');
@@ -512,7 +519,7 @@
             scale: 1.55,
             smooth: 0.12,
             speedCap: 1.35,
-            ability: { name: 'Energy shield', type: 'shield', cooldown: 16000, duration: 4500 }
+            ability: { name: 'Inferno strike', type: 'fireball', cooldown: 16000, duration: 8000, radius: 2.6 }
           },
           aero: {
             name: 'Azure Aero',
@@ -521,7 +528,7 @@
             scale: 0.9,
             smooth: 0.28,
             speedCap: 2.7,
-            ability: { name: 'Instant dash', type: 'dash', cooldown: 9000, duration: 1200 }
+            ability: { name: 'Ice barrier', type: 'iceWall', cooldown: 12000, duration: 5000 }
           },
           mystic: {
             name: 'Violet Mystic',
@@ -571,7 +578,18 @@
         var abilityCooldownEnd = 0;
         var abilityActiveUntil = 0;
         var abilityReady = false;
-        var abilityState = { shieldActive: false, shieldMesh: null, shieldEnd: 0, dashBoostEnd: 0, slowTimeActive: false, slowEnd: 0, slowFactor: 0.5 };
+        var abilityState = {
+          fireballActive: false,
+          fireballEnd: 0,
+          fireballRadius: 2.5,
+          slowTimeActive: false,
+          slowEnd: 0,
+          slowFactor: 0.5,
+          iceWallActive: false,
+          iceWallEnd: 0,
+          iceWallMesh: null
+        };
+        var iceWallY = -11.3;
 
         function getSelectedDifficulty(){
           return difficultyProfiles[selectedDifficultyKey] || difficultyProfiles.nebula;
@@ -772,10 +790,14 @@
           abilityCooldownEnd = 0;
           abilityActiveUntil = 0;
           abilityReady = !!selectedPaddleProfile;
-          if(abilityState.shieldMesh){ abilityState.shieldMesh.visible = false; }
-          abilityState.shieldActive = false;
-          abilityState.dashBoostEnd = 0;
+          abilityState.fireballActive = false;
+          abilityState.fireballEnd = 0;
+          abilityState.fireballRadius = 2.5;
+          restoreBallAppearance();
           abilityState.slowTimeActive = false;
+          abilityState.slowEnd = 0;
+          abilityState.slowFactor = 0.5;
+          deactivateIceWall();
         }
 
         paddleCards.forEach(function(card){
@@ -1841,6 +1863,57 @@
           updateHUD();
         }
 
+        function destroyBlockAtIndex(index, options){
+          if(index < 0 || index >= blocks.length) return null;
+          options = options || {};
+          var block = blocks[index];
+          var hitPosition = block.position.clone();
+          brickGroup.remove(block);
+          blocks.splice(index, 1);
+          if(options.playSound !== false) playSfx('block');
+          boostCombo();
+          var gainedBase = Math.floor(12 * comboMultiplier());
+          var scoreMultiplier = options.scoreMultiplier !== undefined ? options.scoreMultiplier : 1;
+          var gained = Math.max(4, Math.floor(gainedBase * scoreMultiplier));
+          score += gained;
+          totalBlocksDestroyed++;
+          if(quest && !quest.completed) quest.progress++;
+          if(score > bestScore) saveBestScore(score);
+          updateHUD();
+          tryCompleteQuest();
+          checkAchievements();
+
+          if(options.allowIgnite && abilityState.fireballActive){
+            igniteNearbyBlocks(hitPosition, abilityState.fireballRadius || 2.6);
+          }
+
+          if(blocks.length === 0 && options.skipLevelCheck !== true){
+            level++;
+            resetCombo();
+            while(powerUps.length){ var dropped = powerUps.pop(); scene.remove(dropped); }
+            buildLevel();
+            baseBallSpeed = Math.min(0.28 + level * ballSpeedGrowth, maxBallSpeed * 0.85);
+            ballSpeed = baseBallSpeed;
+            resetBallPosition();
+            var themeLabel = currentTheme ? currentTheme.name : 'Niveau';
+            showMessage('Niveau ' + level + ' - ' + themeLabel, 1800);
+            playSfx('levelUp');
+          }
+
+          return hitPosition;
+        }
+
+        function igniteNearbyBlocks(center, radius){
+          radius = radius || 2.6;
+          var radiusSq = radius * radius;
+          for(var idx = blocks.length - 1; idx >= 0; idx--){
+            var candidate = blocks[idx];
+            if(candidate.position.distanceToSquared(center) <= radiusSq){
+              destroyBlockAtIndex(idx, { allowIgnite: false, playSound: false, scoreMultiplier: 0.75, skipLevelCheck: true });
+            }
+          }
+        }
+
         // Collision + game logic updates
         function checkForCollisions(){
           if(gameState!=='playing') return;
@@ -1852,16 +1925,11 @@
             stabiliseBallDirection();
           }
 
-          if(abilityState.shieldActive){
-            var shieldY = paddle.position.y - 3.5;
-            if(ballDirection.y < 0 && ball.position.y <= shieldY + 0.6){
-              if(Math.abs(ball.position.x - paddle.position.x) <= paddleHitRadius + 2.6){
-                ballDirection.y = Math.abs(ballDirection.y);
-                ball.position.y = shieldY + 0.65;
-                stabiliseBallDirection(0.32);
-                playSfx('powerup');
-              }
-            }
+          if(abilityState.iceWallActive && ballDirection.y < 0 && ball.position.y <= iceWallY + 0.6){
+            ballDirection.y = Math.abs(ballDirection.y);
+            ball.position.y = iceWallY + 0.65;
+            stabiliseBallDirection(0.28);
+            playSfx('powerup');
           }
 
           if (ball.position.y < -13) {
@@ -1915,32 +1983,7 @@
               }
               stabiliseBallDirection();
               accelerateBall(1.02);
-              brickGroup.remove(block);
-              blocks.splice(i, 1);
-
-              playSfx('block');
-              boostCombo();
-              var gained = Math.floor(12 * comboMultiplier());
-              score += gained;
-              totalBlocksDestroyed++;
-              if(quest && !quest.completed) quest.progress++;
-              if(score > bestScore) saveBestScore(score);
-              updateHUD();
-              tryCompleteQuest();
-              checkAchievements();
-
-              if(blocks.length === 0){
-                level++;
-                resetCombo();
-                while(powerUps.length){ var dropped = powerUps.pop(); scene.remove(dropped); }
-                buildLevel();
-                baseBallSpeed = Math.min(0.28 + level * ballSpeedGrowth, maxBallSpeed * 0.85);
-                ballSpeed = baseBallSpeed;
-                resetBallPosition();
-                var themeLabel = currentTheme ? currentTheme.name : 'Niveau';
-                showMessage('Niveau ' + level + ' - ' + themeLabel, 1800);
-                playSfx('levelUp');
-              }
+              destroyBlockAtIndex(i, { allowIgnite: true });
               i--;
             }
           }
@@ -2062,17 +2105,15 @@
             return;
           }
           var now = performance.now();
-          if(abilityState.shieldActive && now >= abilityState.shieldEnd){
-            abilityState.shieldActive = false;
-            if(abilityState.shieldMesh) abilityState.shieldMesh.visible = false;
-          }
-          if(abilityState.dashBoostEnd && now >= abilityState.dashBoostEnd){
-            abilityState.dashBoostEnd = 0;
-            paddleGlowMaterial.opacity = 0.32;
-            paddleLight.intensity = 1.5;
+          if(abilityState.fireballActive && now >= abilityState.fireballEnd){
+            abilityState.fireballActive = false;
+            restoreBallAppearance();
           }
           if(abilityState.slowTimeActive && now >= abilityState.slowEnd){
             abilityState.slowTimeActive = false;
+          }
+          if(abilityState.iceWallActive && now >= abilityState.iceWallEnd){
+            deactivateIceWall();
           }
           if(!abilityReady && now >= abilityCooldownEnd && !isAbilityActive()){ abilityReady = true; }
           updateAbilityUI();
@@ -2098,7 +2139,8 @@
         }
 
         function isAbilityActive(){
-          return abilityState.shieldActive || (abilityState.dashBoostEnd && abilityState.dashBoostEnd > performance.now()) || abilityState.slowTimeActive;
+          var now = performance.now();
+          return abilityState.fireballActive || abilityState.slowTimeActive || (abilityState.iceWallActive && abilityState.iceWallEnd > now);
         }
 
         function activateMagicPower(){
@@ -2109,10 +2151,10 @@
           abilityReady = false;
           abilityCooldownEnd = now + (ability.cooldown || 15000);
           abilityActiveUntil = now + (ability.duration || 4000);
-          if(ability.type === 'shield'){
-            activateShieldAbility();
-          } else if(ability.type === 'dash'){
-            activateDashAbility();
+          if(ability.type === 'fireball'){
+            activateFireballAbility(ability);
+          } else if(ability.type === 'iceWall'){
+            activateIceWallAbility();
           } else if(ability.type === 'slow'){
             activateSlowAbility(ability.factor || 0.5);
           }
@@ -2121,35 +2163,71 @@
           magicKeyPressed = false;
         }
 
-        function ensureShieldMesh(){
-          if(abilityState.shieldMesh) return abilityState.shieldMesh;
-          var material = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending });
-          var mesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 2) , material);
-          mesh.rotation.x = -Math.PI/2;
-          mesh.position.set(0, paddle.position.y - 3.5, 0);
-          mesh.visible = false;
-          scene.add(mesh);
-          abilityState.shieldMesh = mesh;
-          return mesh;
+        function applyFireballVisual(){
+          ballMaterial.color.setHex(0xff6b2c);
+          ballMaterial.emissive.setHex(0xff3d00);
+          ballMaterial.emissiveIntensity = Math.max(ballMaterial.emissiveIntensity, 1.4);
+          if(ballGlow && ballGlow.material){
+            ballGlow.material.color.setHex(0xffa94d);
+            ballGlow.material.opacity = Math.max(0.45, ballGlow.material.opacity);
+          }
+          if(ballLight){
+            ballLight.color.setHex(0xff7b1a);
+            ballLight.intensity = Math.max(ballLight.intensity, 1.9);
+          }
         }
 
-        function activateShieldAbility(){
-          var mesh = ensureShieldMesh();
-          mesh.material.color.setHex(selectedPaddleProfile.colors ? selectedPaddleProfile.colors.glow : 0x7dd3fc);
-          mesh.visible = true;
-          mesh.position.set(paddle.position.x, paddle.position.y - 3.5, 0);
-          abilityState.shieldActive = true;
-          abilityState.shieldEnd = abilityActiveUntil;
+        function restoreBallAppearance(){
+          ballMaterial.color.copy(ballBaseColor);
+          ballMaterial.emissive.copy(ballBaseEmissive);
+          ballMaterial.emissiveIntensity = ballBaseEmissiveIntensity;
+          if(ballGlow && ballGlow.material){
+            ballGlow.material.color.copy(ballGlowBaseColor);
+            ballGlow.material.opacity = ballGlowBaseOpacity;
+          }
+          if(ballLight){
+            ballLight.color.copy(ballLightBaseColor);
+            ballLight.intensity = ballLightBaseIntensity;
+          }
         }
 
-        function activateDashAbility(){
-          var limit = 26 - paddleHitRadius;
-          paddle.position.x = THREE.Math.clamp(ball.position.x, -limit, limit);
-          paddleTargetX = paddle.position.x;
-          paddleVelocity = 0;
-          abilityState.dashBoostEnd = abilityActiveUntil;
-          paddleGlowMaterial.opacity = 0.48;
-          paddleLight.intensity = 2.2;
+        function activateFireballAbility(ability){
+          abilityState.fireballActive = true;
+          abilityState.fireballEnd = abilityActiveUntil;
+          abilityState.fireballRadius = ability.radius || 2.6;
+          applyFireballVisual();
+        }
+
+        function ensureIceWallMesh(){
+          if(abilityState.iceWallMesh) return abilityState.iceWallMesh;
+          var geometry = new THREE.BoxGeometry(55, 0.6, 0.8);
+          var material = new THREE.MeshPhongMaterial({
+            color: 0x7dd3fc,
+            transparent: true,
+            opacity: 0.55,
+            emissive: 0x38bdf8,
+            emissiveIntensity: 0.35
+          });
+          var wall = new THREE.Mesh(geometry, material);
+          wall.position.set(0, iceWallY, 0);
+          wall.visible = false;
+          scene.add(wall);
+          abilityState.iceWallMesh = wall;
+          return wall;
+        }
+
+        function activateIceWallAbility(){
+          var wall = ensureIceWallMesh();
+          wall.visible = true;
+          wall.scale.set(1,1,1);
+          abilityState.iceWallActive = true;
+          abilityState.iceWallEnd = abilityActiveUntil;
+        }
+
+        function deactivateIceWall(){
+          abilityState.iceWallActive = false;
+          abilityState.iceWallEnd = 0;
+          if(abilityState.iceWallMesh){ abilityState.iceWallMesh.visible = false; }
         }
 
         function activateSlowAbility(factor){
