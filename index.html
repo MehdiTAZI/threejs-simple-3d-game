@@ -79,8 +79,13 @@
         .level-card:hover { transform: translateY(-3px); border-color: rgba(59, 130, 246, 0.68); box-shadow: 0 10px 24px rgba(30, 64, 175, 0.28); }
         .level-card.active { border-color: rgba(236, 72, 153, 0.8); box-shadow: 0 12px 28px rgba(236, 72, 153, 0.35); }
         #level-details { display: block; font-size: 13px; color: #cbd5f5; margin-right: 24px; }
-        #level-open-btn {
+        #selector-buttons {
           margin-top: 8px;
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+        }
+        #selector-buttons button {
           background: rgba(129, 140, 248, 0.22);
           border: 1px solid rgba(129, 140, 248, 0.6);
           border-radius: 999px;
@@ -90,7 +95,13 @@
           cursor: pointer;
           transition: all 0.2s ease;
         }
-        #level-open-btn:hover { border-color: rgba(167, 139, 250, 0.9); color: #f5f3ff; }
+        #selector-buttons button:hover { border-color: rgba(167, 139, 250, 0.9); color: #f5f3ff; }
+        #paddle-open-btn {
+          background: rgba(236, 72, 153, 0.18);
+          border-color: rgba(244, 114, 182, 0.55);
+          color: #ffe4f1;
+        }
+        #paddle-open-btn:hover { border-color: rgba(244, 114, 182, 0.85); color: #fff0f8; }
         #difficulty-info {
           margin-top: 6px;
           font-size: 11px;
@@ -235,7 +246,10 @@
       <div id="controls">
         <div>Controls: arrows / mouse • Magic: press F</div>
         <div class="btn-row"><button id="start-btn">Start</button> <button id="pause-btn">Pause</button> <button id="restart-btn">Restart</button> <button id="audio-btn">Audio: on</button></div>
-        <button id="level-open-btn">Select Level</button>
+        <div id="selector-buttons">
+          <button id="level-open-btn">Select Level</button>
+          <button id="paddle-open-btn">Select Paddle</button>
+        </div>
         <div id="difficulty-info"></div>
         <div id="volume-control">Volume: <input id="volume-range" type="range" min="0" max="100" value="80" /></div>
       </div>
@@ -290,6 +304,24 @@
               <div class="subtitle">Hard • Stage 3</div>
               <div class="description">Less margin for error, faster rebounds, and denser brick waves.</div>
               <div class="stats">Music: Orbital Station</div>
+            </button>
+            <button class="level-card" data-key="aurora">
+              <div class="title">Aurora Peaks</div>
+              <div class="subtitle">Chill • Stage 4</div>
+              <div class="description">Icy cliffs with reflective snow banks and drifting platforms.</div>
+              <div class="stats">Music: Aurora Peaks</div>
+            </button>
+            <button class="level-card" data-key="mirage">
+              <div class="title">Desert Mirage</div>
+              <div class="subtitle">Arid • Stage 5</div>
+              <div class="description">Shimmering dunes, swirling sands, and mirage-triggered gusts.</div>
+              <div class="stats">Music: Desert Mirage</div>
+            </button>
+            <button class="level-card" data-key="neon">
+              <div class="title">Neon Shards</div>
+              <div class="subtitle">Night • Stage 6</div>
+              <div class="description">Hyper-speed neon rails, split lanes, and relentless combos.</div>
+              <div class="stats">Music: Neon Shards</div>
             </button>
           </div>
           <div class="modal-footer">
@@ -414,7 +446,7 @@
         loadPaddleModel();
 
         // Ball + light aura
-        var ballGeometry = new THREE.SphereGeometry(0.5, 32, 32);
+        var ballGeometry = new THREE.IcosahedronGeometry(0.55, 2);
         var ballMaterial = new THREE.MeshStandardMaterial({
           color: 0x60a5fa,
           emissive: 0x2f88ff,
@@ -445,6 +477,8 @@
         textureLoader.setCrossOrigin('anonymous');
         var hdriLoader = null;
         var gltfLoader = null;
+        var brickTextureCache = {};
+        var skyTextureCache = {};
 
         function getGLTFLoader(onReady, attempt){
           attempt = attempt || 0;
@@ -470,8 +504,66 @@
           setTimeout(function(){ getGLTFLoader(onReady, attempt + 1); }, 200);
         }
 
+        function getBrickTexture(url){
+          if(!url) return null;
+          if(brickTextureCache[url]) return brickTextureCache[url];
+          var tex = textureLoader.load(url, function(t){
+            t.encoding = THREE.sRGBEncoding;
+            t.wrapS = t.wrapT = THREE.RepeatWrapping;
+            t.repeat.set(1.2, 0.8);
+            if(renderer && renderer.capabilities){
+              t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
+            }
+          });
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          brickTextureCache[url] = tex;
+          return tex;
+        }
+
+        function applySkyTexture(theme, tex){
+          if(!tex){
+            scene.background = null;
+            scene.environment = null;
+            backgroundSphere.visible = true;
+            return;
+          }
+          scene.background = tex;
+          scene.environment = tex;
+          backgroundSphere.visible = false;
+        }
+
+        function setSkyTexture(theme){
+          var bg = theme.background || {};
+          var url = bg.sky;
+          if(!url){
+            applySkyTexture(theme, null);
+            return;
+          }
+          var cached = skyTextureCache[url];
+          if(cached && cached.isTexture){
+            applySkyTexture(theme, cached);
+            return;
+          }
+          textureLoader.load(url, function(tex){
+            tex.encoding = THREE.sRGBEncoding;
+            tex.mapping = THREE.EquirectangularReflectionMapping;
+            if(renderer && renderer.capabilities){
+              tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
+            }
+            skyTextureCache[url] = tex;
+            if(currentTheme === theme){
+              applySkyTexture(theme, tex);
+            }
+          }, undefined, function(){
+            skyTextureCache[url] = null;
+            if(currentTheme === theme){
+              applySkyTexture(theme, null);
+            }
+          });
+        }
+
         // Bricks group
-        var blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+        var blockGeometry = new THREE.BoxGeometry(1, 0.6, 0.5, 2, 2, 2);
         var brickGroup = new THREE.Group();
         scene.add(brickGroup);
         var blocks = [];
@@ -511,6 +603,17 @@
         var currentMusicTheme = null;
         var pendingMusicTheme = null;
         var musicTimer = null;
+        var fireParticles = null;
+        var fireParticleData = [];
+        var fireParticlePositions = null;
+        var iceParticles = null;
+        var iceParticleData = [];
+        var iceParticlePositions = null;
+        var slowParticles = null;
+        var slowParticleData = null;
+        var brickBursts = [];
+        var wizzEffects = [];
+        var fadingBlocks = [];
         var paddleProfiles = {
           titan: {
             name: 'Crimson Titan',
@@ -570,6 +673,36 @@
             growthMultiplier: 1.25,
             maxSpeedMultiplier: 1.2,
             musicTheme: 'Orbital Station'
+          },
+          aurora: {
+            name: 'Aurora Peaks',
+            description: 'Icy ridges, reflective ice and gusty winds challenge positioning.',
+            startLevel: 4,
+            lives: 4,
+            speedMultiplier: 0.95,
+            growthMultiplier: 1.05,
+            maxSpeedMultiplier: 1,
+            musicTheme: 'Aurora Peaks'
+          },
+          mirage: {
+            name: 'Desert Mirage',
+            description: 'Shimmering dunes with erratic gusts and heat-driven rebounds.',
+            startLevel: 5,
+            lives: 3,
+            speedMultiplier: 1.05,
+            growthMultiplier: 1.2,
+            maxSpeedMultiplier: 1.1,
+            musicTheme: 'Desert Mirage'
+          },
+          neon: {
+            name: 'Neon Shards',
+            description: 'Hyper-fast rails, dense grids, and relentless ball acceleration.',
+            startLevel: 6,
+            lives: 2,
+            speedMultiplier: 1.15,
+            growthMultiplier: 1.3,
+            maxSpeedMultiplier: 1.25,
+            musicTheme: 'Neon Shards'
           }
         };
         var selectedPaddleKey = null;
@@ -605,6 +738,7 @@
         var ballSpeedGrowth = defaultBallSpeedGrowth;
         var tempVec1 = new THREE.Vector3();
         var tempVec2 = new THREE.Vector3();
+        var playfieldHalfWidth = 28.5;
 
         function updateHUD(){
           document.getElementById('score').textContent = score;
@@ -754,6 +888,7 @@
               startThemeMusic('Start Screen');
             }
           }
+          highlightSelectedPaddleCard();
         }
 
         function closeSelectionModal(){
@@ -784,6 +919,7 @@
           paddleTargetX = paddle.position.x;
           resetAbilityState();
           updateAbilityUI();
+          updatePaddleButtonLabel();
         }
 
         function resetAbilityState(){
@@ -798,6 +934,7 @@
           abilityState.slowEnd = 0;
           abilityState.slowFactor = 0.5;
           deactivateIceWall();
+          if(slowParticles) slowParticles.visible = false;
         }
 
         paddleCards.forEach(function(card){
@@ -827,7 +964,10 @@
           powerup: { freq: 660, freqEnd: 880, attack: 0.02, release: 0.45, gain: 0.28, type: 'sine' },
           lifeLost: { freq: 220, freqEnd: 120, attack: 0.03, release: 0.8, gain: 0.35, type: 'sawtooth' },
           levelUp: { freq: 520, freqEnd: 780, attack: 0.02, release: 0.5, gain: 0.32, type: 'triangle' },
-          gameOver: { freq: 150, freqEnd: 70, attack: 0.04, release: 1.2, gain: 0.38, type: 'triangle' }
+          gameOver: { freq: 150, freqEnd: 70, attack: 0.04, release: 1.2, gain: 0.38, type: 'triangle' },
+          magicFire: { freq: 420, freqEnd: 920, attack: 0.01, release: 0.6, gain: 0.5, type: 'sawtooth' },
+          magicIce: { freq: 540, freqEnd: 260, attack: 0.02, release: 0.8, gain: 0.42, type: 'triangle' },
+          magicSlow: { freq: 320, freqEnd: 240, attack: 0.05, release: 1.1, gain: 0.38, type: 'sine' }
         };
 
         var musicPresets = {
@@ -893,6 +1033,21 @@
           'Orbital Station': {
             url: 'resources/background3.mp3',
             volume: 0.25,
+            loop: true
+          },
+          'Aurora Peaks': {
+            url: 'resources/background1.mp3',
+            volume: 0.22,
+            loop: true
+          },
+          'Desert Mirage': {
+            url: 'resources/background2.mp3',
+            volume: 0.27,
+            loop: true
+          },
+          'Neon Shards': {
+            url: 'resources/background3.mp3',
+            volume: 0.28,
             loop: true
           },
           default: {
@@ -1289,8 +1444,8 @@
             modelPosition: { x: 12, y: 4.5, z: -6 },
             animation: 'spin',
             background: {
-              texture: 'https://images.pexels.com/photos/713046/pexels-photo-713046.jpeg?auto=compress&cs=tinysrgb&w=1920',
-              floor: 'https://images.pexels.com/photos/158028/pexels-photo-158028.jpeg?auto=compress&cs=tinysrgb&w=1600'
+              sky: 'https://images.pexels.com/photos/713046/pexels-photo-713046.jpeg?auto=compress&cs=tinysrgb&w=2048',
+              brick: 'https://images.pexels.com/photos/1457842/pexels-photo-1457842.jpeg?auto=compress&cs=tinysrgb&w=1024'
             }
           },
           {
@@ -1307,8 +1462,8 @@
             modelPosition: { x: -14, y: 5.5, z: -8 },
             animation: 'float',
             background: {
-              texture: 'https://images.pexels.com/photos/443446/pexels-photo-443446.jpeg?auto=compress&cs=tinysrgb&w=1920',
-              floor: 'https://images.pexels.com/photos/1486974/pexels-photo-1486974.jpeg?auto=compress&cs=tinysrgb&w=1600'
+              sky: 'https://images.pexels.com/photos/1938347/pexels-photo-1938347.jpeg?auto=compress&cs=tinysrgb&w=2048',
+              brick: 'https://images.pexels.com/photos/259915/pexels-photo-259915.jpeg?auto=compress&cs=tinysrgb&w=1024'
             }
           },
           {
@@ -1328,8 +1483,68 @@
             animationPause: 700,
             animationFade: 0.4,
             background: {
-              texture: 'https://images.pexels.com/photos/220201/pexels-photo-220201.jpeg?auto=compress&cs=tinysrgb&w=1920',
-              floor: 'https://images.pexels.com/photos/220326/pexels-photo-220326.jpeg?auto=compress&cs=tinysrgb&w=1600'
+              sky: 'https://images.pexels.com/photos/237630/pexels-photo-237630.jpeg?auto=compress&cs=tinysrgb&w=2048',
+              brick: 'https://images.pexels.com/photos/220326/pexels-photo-220326.jpeg?auto=compress&cs=tinysrgb&w=1024'
+            }
+          },
+          {
+            name: 'Aurora Peaks',
+            clearColor: 0x0d1627,
+            fog: { near: 65, far: 200 },
+            ambientColor: 0xb6d7ff,
+            ambientIntensity: 0.9,
+            keyColor: 0x7dd3fc,
+            keyIntensity: 1.25,
+            floorColor: 0x10253a,
+            modelUrl: 'https://threejs.org/examples/models/gltf/Fox/glTF/Fox.gltf',
+            modelScale: [0.05, 0.05, 0.05],
+            modelPosition: { x: -6, y: 2.6, z: -5 },
+            animation: 'float',
+            background: {
+              sky: 'https://images.pexels.com/photos/761993/pexels-photo-761993.jpeg?auto=compress&cs=tinysrgb&w=2048',
+              brick: 'https://images.pexels.com/photos/1450082/pexels-photo-1450082.jpeg?auto=compress&cs=tinysrgb&w=1024'
+            }
+          },
+          {
+            name: 'Desert Mirage',
+            clearColor: 0x2b1703,
+            fog: { near: 70, far: 210 },
+            ambientColor: 0xfacc15,
+            ambientIntensity: 0.7,
+            keyColor: 0xff8a4c,
+            keyIntensity: 1.4,
+            floorColor: 0x8c4b16,
+            modelUrl: 'https://threejs.org/examples/models/gltf/Horse.glb',
+            modelScale: [1.6, 1.6, 1.6],
+            modelPosition: { x: 9, y: 1.4, z: -6 },
+            animation: 'hover',
+            animationClips: ['Walk', 'Trot', 'Gallop'],
+            animationPause: 1200,
+            animationFade: 0.6,
+            background: {
+              sky: 'https://images.pexels.com/photos/248797/pexels-photo-248797.jpeg?auto=compress&cs=tinysrgb&w=2048',
+              brick: 'https://images.pexels.com/photos/1005644/pexels-photo-1005644.jpeg?auto=compress&cs=tinysrgb&w=1024'
+            }
+          },
+          {
+            name: 'Neon Shards',
+            clearColor: 0x03020a,
+            fog: { near: 80, far: 240 },
+            ambientColor: 0x1f27ff,
+            ambientIntensity: 0.8,
+            keyColor: 0xff4d94,
+            keyIntensity: 1.45,
+            floorColor: 0x111332,
+            modelUrl: 'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb',
+            modelScale: [1.1, 1.1, 1.1],
+            modelPosition: { x: -9, y: 2.8, z: -5 },
+            animation: 'hover',
+            animationClips: ['Dance', 'Wave'],
+            animationPause: 900,
+            animationFade: 0.5,
+            background: {
+              sky: 'https://images.pexels.com/photos/3573382/pexels-photo-3573382.jpeg?auto=compress&cs=tinysrgb&w=2048',
+              brick: 'https://images.pexels.com/photos/373912/pexels-photo-373912.jpeg?auto=compress&cs=tinysrgb&w=1024'
             }
           }
         ];
@@ -1365,7 +1580,7 @@
         }
 
         function clampPaddlePosition(){
-          var limit = 26 - paddleHitRadius;
+          var limit = playfieldHalfWidth - paddleHitRadius;
           paddle.position.x = THREE.Math.clamp(paddle.position.x, -limit, limit);
           paddleTargetX = THREE.Math.clamp(paddleTargetX, -limit, limit);
         }
@@ -1412,10 +1627,26 @@
           options = options || {};
           while (brickGroup.children.length) brickGroup.remove(brickGroup.children[0]);
           blocks.length = 0;
+          var theme = sceneThemes[(level - 1) % sceneThemes.length];
+          var brickTexture = theme && theme.background ? getBrickTexture(theme.background.brick) : null;
 
           var addBlock = function(x, y, color){
-            var blockMaterial = new THREE.MeshPhongMaterial({ color: color });
+            var baseColor = color && color.isColor ? color.clone() : new THREE.Color(color || 0xffffff);
+            var emissiveColor = baseColor.clone().multiplyScalar(0.18);
+            baseColor.offsetHSL(0, 0, (Math.random() - 0.5) * 0.05);
+            var blockMaterial = new THREE.MeshStandardMaterial({
+              color: baseColor,
+              metalness: 0.34,
+              roughness: 0.46,
+              emissive: emissiveColor
+            });
+            if(brickTexture){
+              blockMaterial.map = brickTexture;
+              blockMaterial.needsUpdate = true;
+            }
             var block = new THREE.Mesh(blockGeometry, blockMaterial);
+            block.castShadow = true;
+            block.receiveShadow = true;
             block.position.set(x, y, 0);
             brickGroup.add(block);
             blocks.push(block);
@@ -1462,56 +1693,13 @@
           wall.position.set(0, 25, -40);
           themeGroup.add(wall);
 
-          if(theme.background && theme.background.floor){
-            textureLoader.load(theme.background.floor, function(tex){
-              tex.encoding = THREE.sRGBEncoding;
-              tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-              tex.repeat.set(3, 3);
-              if(renderer && renderer.capabilities){
-                tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
-              }
-              floor.material.map = tex;
-              floor.material.opacity = 1.0;
-              floor.material.color.set(0xffffff);
-              floor.material.needsUpdate = true;
-            }, undefined, function(){
-              floor.material.opacity = 0.4;
-              floor.material.map = null;
-              floor.material.color.set(theme.floorColor || 0x172554);
-            });
-          }
+          wall.visible = false;
+          floor.material.map = null;
+          floor.material.color.set(theme.floorColor || 0x222c4a);
+          floor.material.opacity = 0.92;
+          floor.material.needsUpdate = true;
 
-          if(theme.background && theme.background.texture){
-            textureLoader.load(theme.background.texture, function(tex){
-              tex.encoding = THREE.sRGBEncoding;
-              tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-              wall.material.map = tex;
-              wall.material.opacity = 1.0;
-              wall.material.color.set(0xffffff);
-              wall.material.needsUpdate = true;
-            }, undefined, function(){
-              wall.material.opacity = 0.5;
-              wall.material.map = null;
-              wall.material.color.set(0x1b263b);
-            });
-          }
-
-          if(theme.background && theme.background.texture){
-            textureLoader.load(theme.background.texture, function(tex){
-              tex.encoding = THREE.sRGBEncoding;
-              if(renderer && renderer.capabilities){
-                tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1);
-              }
-              scene.background = tex;
-              backgroundSphere.visible = false;
-            }, undefined, function(){
-              scene.background = null;
-              backgroundSphere.visible = true;
-            });
-          } else {
-            scene.background = null;
-            backgroundSphere.visible = true;
-          }
+          setSkyTexture(theme);
 
           loadThemeModel(theme);
           if(!options.preview){
@@ -1709,8 +1897,8 @@
         window.addEventListener('mousemove', function(e){
           // convert screen x to world x (approx)
           var ratio = (e.clientX / window.innerWidth) * 2 - 1;
-          var limit = 26 - paddleHitRadius;
-          mouseTargetX = THREE.Math.clamp(ratio * 26, -limit, limit);
+          var limit = playfieldHalfWidth - paddleHitRadius;
+          mouseTargetX = THREE.Math.clamp(ratio * playfieldHalfWidth, -limit, limit);
           mouseControlActive = true;
           paddleTargetX = mouseTargetX;
         });
@@ -1738,6 +1926,7 @@
         var levelConfirm = document.getElementById('level-confirm');
         var levelDetails = document.getElementById('level-details');
         var levelOpenBtn = document.getElementById('level-open-btn');
+        var paddleOpenBtn = document.getElementById('paddle-open-btn');
         var difficultyInfoEl = document.getElementById('difficulty-info');
         var pendingDifficultyKey = selectedDifficultyKey;
 
@@ -1749,6 +1938,7 @@
           var profile = getSelectedDifficulty();
           if(difficultyInfoEl) difficultyInfoEl.textContent = describeDifficulty(profile);
           if(levelOpenBtn) levelOpenBtn.textContent = 'Level: ' + profile.name;
+          updatePaddleButtonLabel();
         }
 
         function refreshLevelCards(){
@@ -1808,6 +1998,36 @@
           });
         }
 
+        function highlightSelectedPaddleCard(){
+          paddleCards.forEach(function(card){
+            card.classList.toggle('active', card.getAttribute('data-key') === selectedPaddleKey);
+          });
+          if(selectedPaddleKey){
+            selectConfirm.disabled = false;
+            selectConfirm.setAttribute('data-key', selectedPaddleKey);
+            var profile = paddleProfiles[selectedPaddleKey];
+            if(profile){
+              paddleDetails.textContent = profile.description + ' — ability: ' + profile.ability.name + ' (press F)';
+            }
+          }
+        }
+
+        function updatePaddleButtonLabel(){
+          if(!paddleOpenBtn) return;
+          if(selectedPaddleProfile){
+            paddleOpenBtn.textContent = 'Paddle: ' + selectedPaddleProfile.name;
+          } else {
+            paddleOpenBtn.textContent = 'Select Paddle';
+          }
+        }
+
+        if(paddleOpenBtn){
+          paddleOpenBtn.addEventListener('click', function(){
+            highlightSelectedPaddleCard();
+            openSelectionModal();
+          });
+        }
+
         if(levelModal){
           levelModal.addEventListener('click', function(evt){
             if(evt.target === levelModal){
@@ -1817,6 +2037,7 @@
         }
 
         updateDifficultyInfo();
+        updatePaddleButtonLabel();
 
         function startGame(){
           if(!selectedPaddleProfile){
@@ -1882,35 +2103,164 @@
           updateHUD();
           tryCompleteQuest();
           checkAchievements();
+          var fireTriggered = !!(options.fireBurst && abilityState.fireballActive);
+          spawnBrickBurst(hitPosition, fireTriggered);
+          startBlockFade(block, fireTriggered);
 
-          if(options.allowIgnite && abilityState.fireballActive){
-            igniteNearbyBlocks(hitPosition, abilityState.fireballRadius || 2.6);
+          if(fireTriggered && options.allowIgnite !== false){
+            igniteNearbyBlocks(hitPosition, abilityState.fireballRadius || 2.8);
           }
 
           if(blocks.length === 0 && options.skipLevelCheck !== true){
-            level++;
-            resetCombo();
-            while(powerUps.length){ var dropped = powerUps.pop(); scene.remove(dropped); }
-            buildLevel();
-            baseBallSpeed = Math.min(0.28 + level * ballSpeedGrowth, maxBallSpeed * 0.85);
-            ballSpeed = baseBallSpeed;
-            resetBallPosition();
-            var themeLabel = currentTheme ? currentTheme.name : 'Niveau';
-            showMessage('Niveau ' + level + ' - ' + themeLabel, 1800);
-            playSfx('levelUp');
+            handleLevelCleared();
           }
 
           return hitPosition;
         }
 
         function igniteNearbyBlocks(center, radius){
-          radius = radius || 2.6;
+          if(!abilityState.fireballActive) return;
+          radius = radius || 2.8;
           var radiusSq = radius * radius;
-          for(var idx = blocks.length - 1; idx >= 0; idx--){
+          var candidates = [];
+          for(var idx = 0; idx < blocks.length; idx++){
             var candidate = blocks[idx];
-            if(candidate.position.distanceToSquared(center) <= radiusSq){
-              destroyBlockAtIndex(idx, { allowIgnite: false, playSound: false, scoreMultiplier: 0.75, skipLevelCheck: true });
+            var distSq = candidate.position.distanceToSquared(center);
+            if(distSq <= radiusSq){
+              candidates.push({ block: candidate, dist: distSq });
             }
+          }
+          candidates.sort(function(a, b){ return a.dist - b.dist; });
+          var destroyed = 0;
+          for(var i=0;i<candidates.length && destroyed < 3;i++){
+            var entry = candidates[i];
+            var index = blocks.indexOf(entry.block);
+            if(index !== -1){
+              destroyBlockAtIndex(index, { allowIgnite: false, playSound: false, scoreMultiplier: 0.75, skipLevelCheck: true, fireBurst: true });
+              destroyed++;
+            }
+          }
+          if(destroyed){
+            spawnWizzEffect(center, radius, true);
+            if(blocks.length === 0){
+              handleLevelCleared();
+            }
+          }
+        }
+
+        function handleLevelCleared(){
+          var difficulty = getSelectedDifficulty();
+          level++;
+          resetCombo();
+          while(powerUps.length){ var dropped = powerUps.pop(); scene.remove(dropped); }
+          buildLevel();
+          var baseSeed = defaultBaseBallSpeed * (difficulty.speedMultiplier || 1);
+          var levelsCompleted = Math.max(0, level - (difficulty.startLevel || 1));
+          baseBallSpeed = Math.min(baseSeed + levelsCompleted * ballSpeedGrowth, maxBallSpeed * 0.85);
+          ballSpeed = baseBallSpeed;
+          resetBallPosition();
+          var themeLabel = currentTheme ? currentTheme.name : 'Level';
+          showMessage('Level ' + level + ' - ' + themeLabel, 1800);
+          playSfx('levelUp');
+        }
+
+        function startBlockFade(mesh, fireMode){
+          if(!mesh) return;
+          var fadeMaterial = mesh.material;
+          if(fadeMaterial && !fadeMaterial.transparent){
+            mesh.material = fadeMaterial.clone();
+            mesh.material.transparent = true;
+          }
+          if(mesh.material){
+            mesh.material.opacity = 1;
+          }
+          mesh.scale.set(1,1,1);
+          scene.add(mesh);
+          fadingBlocks.push({ mesh: mesh, life: fireMode ? 0.45 : 0.35, age: 0 });
+        }
+
+        function spawnWizzEffect(position, radius, fireMode){
+          radius = radius || 2.4;
+          var count = fireMode ? 80 : 48;
+          var geometry = new THREE.BufferGeometry();
+          var positions = new Float32Array(count * 3);
+          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          var material = new THREE.PointsMaterial({
+            color: fireMode ? 0xff9b6a : 0x7dd3fc,
+            size: fireMode ? 0.36 : 0.3,
+            transparent: true,
+            opacity: 0.9,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          var points = new THREE.Points(geometry, material);
+          points.position.copy(position);
+          points.frustumCulled = false;
+          var angles = new Array(count);
+          for(var i=0;i<count;i++){
+            var angle = (i / count) * Math.PI * 2;
+            angles[i] = angle;
+            var x = Math.cos(angle) * radius;
+            var z = Math.sin(angle) * radius;
+            var y = Math.sin(angle * 2.2) * (fireMode ? 0.8 : 0.4);
+            positions[i*3] = x;
+            positions[i*3 + 1] = y;
+            positions[i*3 + 2] = z;
+          }
+          geometry.attributes.position.needsUpdate = true;
+          scene.add(points);
+          wizzEffects.push({
+            points: points,
+            angles: angles,
+            radius: radius,
+            wave: fireMode ? 0.8 : 0.4,
+            spin: fireMode ? 6.5 : 4.2,
+            life: fireMode ? 0.55 : 0.45,
+            age: 0,
+            count: count
+          });
+        }
+
+        function spawnBrickBurst(position, fireMode){
+          if(!position) return;
+          var count = fireMode ? 72 : 42;
+          var positions = new Float32Array(count * 3);
+          var velocities = new Float32Array(count * 3);
+          for(var i=0;i<count;i++){
+            var theta = Math.random() * Math.PI * 2;
+            var speed = fireMode ? 14 + Math.random() * 10 : 10 + Math.random() * 6;
+            var uplift = fireMode ? 6 + Math.random() * 4 : 3 + Math.random() * 2;
+            velocities[i*3] = Math.cos(theta) * speed;
+            velocities[i*3 + 1] = uplift;
+            velocities[i*3 + 2] = Math.sin(theta) * speed * 0.6;
+            positions[i*3] = 0;
+            positions[i*3 + 1] = 0;
+            positions[i*3 + 2] = 0;
+          }
+          var geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          var material = new THREE.PointsMaterial({
+            color: fireMode ? 0xffb347 : 0x8fd6ff,
+            size: fireMode ? 0.3 : 0.22,
+            transparent: true,
+            opacity: fireMode ? 0.95 : 0.8,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          var points = new THREE.Points(geometry, material);
+          points.position.copy(position);
+          points.frustumCulled = false;
+          scene.add(points);
+          brickBursts.push({
+            points: points,
+            positions: positions,
+            velocities: velocities,
+            life: fireMode ? 0.55 : 0.4,
+            age: 0,
+            fire: fireMode
+          });
+          if(fireMode){
+            spawnWizzEffect(position, radius, true);
           }
         }
 
@@ -1919,9 +2269,9 @@
           if(gameState!=='playing') return;
 
           // Walls
-          if (ball.position.x < -30 || ball.position.x > 27){
+          if (ball.position.x < -playfieldHalfWidth || ball.position.x > playfieldHalfWidth){
             ballDirection.x *= -1;
-            ball.position.x = THREE.Math.clamp(ball.position.x, -30, 27);
+            ball.position.x = THREE.Math.clamp(ball.position.x, -playfieldHalfWidth, playfieldHalfWidth);
             stabiliseBallDirection();
           }
 
@@ -1983,7 +2333,7 @@
               }
               stabiliseBallDirection();
               accelerateBall(1.02);
-              destroyBlockAtIndex(i, { allowIgnite: true });
+              destroyBlockAtIndex(i, { allowIgnite: true, fireBurst: abilityState.fireballActive });
               i--;
             }
           }
@@ -2073,11 +2423,12 @@
           }
           updatePaddleMotion();
           updateMagicState();
+          updateParticleSystems(delta);
           renderer.render(scene, camera);
         }
 
         function updatePaddleMotion(){
-          var limit = 26 - paddleHitRadius;
+          var limit = playfieldHalfWidth - paddleHitRadius;
           paddleTargetX = THREE.Math.clamp(paddleTargetX, -limit, limit);
           mouseTargetX = THREE.Math.clamp(mouseTargetX, -limit, limit);
 
@@ -2111,6 +2462,7 @@
           }
           if(abilityState.slowTimeActive && now >= abilityState.slowEnd){
             abilityState.slowTimeActive = false;
+            if(slowParticles) slowParticles.visible = false;
           }
           if(abilityState.iceWallActive && now >= abilityState.iceWallEnd){
             deactivateIceWall();
@@ -2189,13 +2541,28 @@
             ballLight.color.copy(ballLightBaseColor);
             ballLight.intensity = ballLightBaseIntensity;
           }
+          if(fireParticles){ fireParticles.visible = false; }
         }
 
         function activateFireballAbility(ability){
           abilityState.fireballActive = true;
           abilityState.fireballEnd = abilityActiveUntil;
           abilityState.fireballRadius = ability.radius || 2.6;
+          ensureFireParticles();
+          if(fireParticles){
+            for(var i=0;i<fireParticleData.length;i++){
+              var d = fireParticleData[i];
+              d.angle = Math.random() * Math.PI * 2;
+              d.radius = 0.65 + Math.random() * 0.45;
+              fireParticlePositions[i*3] = Math.cos(d.angle) * d.radius;
+              fireParticlePositions[i*3 + 1] = Math.sin(d.angle) * d.radius;
+              fireParticlePositions[i*3 + 2] = 0;
+            }
+            fireParticles.geometry.attributes.position.needsUpdate = true;
+            fireParticles.visible = true;
+          }
           applyFireballVisual();
+          playSfx('magicFire');
         }
 
         function ensureIceWallMesh(){
@@ -2222,18 +2589,259 @@
           wall.scale.set(1,1,1);
           abilityState.iceWallActive = true;
           abilityState.iceWallEnd = abilityActiveUntil;
+          ensureIceParticles();
+          if(iceParticles) iceParticles.visible = true;
+          playSfx('magicIce');
         }
 
         function deactivateIceWall(){
           abilityState.iceWallActive = false;
           abilityState.iceWallEnd = 0;
           if(abilityState.iceWallMesh){ abilityState.iceWallMesh.visible = false; }
+          if(iceParticles){ iceParticles.visible = false; }
         }
 
         function activateSlowAbility(factor){
           abilityState.slowTimeActive = true;
           abilityState.slowEnd = abilityActiveUntil;
           abilityState.slowFactor = THREE.Math.clamp(factor || 0.5, 0.2, 0.8);
+          ensureSlowParticles();
+          if(slowParticles && slowParticleData){
+            for(var i=0;i<slowParticleData.count;i++){
+              var phase = Math.random() * Math.PI * 2;
+              var radius = 0.9 + Math.random() * 0.35;
+              slowParticleData.phases[i] = phase;
+              slowParticleData.radius[i] = radius;
+              slowParticleData.speed[i] = 1 + Math.random() * 1.2;
+              slowParticleData.positions[i*3] = Math.cos(phase) * radius;
+              slowParticleData.positions[i*3 + 1] = Math.sin(phase) * (radius * 0.6);
+              slowParticleData.positions[i*3 + 2] = 0;
+            }
+            slowParticleData.geometry.attributes.position.needsUpdate = true;
+            slowParticles.visible = true;
+          }
+          playSfx('magicSlow');
+        }
+
+        function ensureSlowParticles(){
+          if(slowParticles) return slowParticles;
+          var count = 48;
+          var positions = new Float32Array(count * 3);
+          var geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          var material = new THREE.PointsMaterial({
+            color: 0xc4b5fd,
+            size: 0.32,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.75,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          slowParticles = new THREE.Points(geometry, material);
+          slowParticles.frustumCulled = false;
+          slowParticles.visible = false;
+          slowParticleData = {
+            geometry: geometry,
+            positions: positions,
+            phases: new Array(count),
+            speed: new Array(count),
+            radius: new Array(count),
+            count: count
+          };
+          for(var i=0;i<count;i++){
+            var phase = Math.random() * Math.PI * 2;
+            var radius = 0.9 + Math.random() * 0.35;
+            slowParticleData.phases[i] = phase;
+            slowParticleData.speed[i] = 1 + Math.random() * 1.2;
+            slowParticleData.radius[i] = radius;
+            positions[i*3] = Math.cos(phase) * radius;
+            positions[i*3 + 1] = Math.sin(phase) * (radius * 0.6);
+            positions[i*3 + 2] = 0;
+          }
+          geometry.attributes.position.needsUpdate = true;
+          ball.add(slowParticles);
+          return slowParticles;
+        }
+
+        function ensureFireParticles(){
+          if(fireParticles) return fireParticles;
+          var count = 42;
+          fireParticlePositions = new Float32Array(count * 3);
+          var geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.BufferAttribute(fireParticlePositions, 3));
+          var material = new THREE.PointsMaterial({
+            color: 0xffb347,
+            size: 0.38,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.85,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          fireParticles = new THREE.Points(geometry, material);
+          fireParticles.frustumCulled = false;
+          fireParticles.visible = false;
+          fireParticleData = [];
+          for(var i=0;i<count;i++){
+            var radius = 0.65 + Math.random() * 0.45;
+            var angle = Math.random() * Math.PI * 2;
+            fireParticleData.push({ radius: radius, angle: angle, speed: 1.6 + Math.random()*1.4, wobble: 0.35 + Math.random()*0.4 });
+            fireParticlePositions[i*3] = Math.cos(angle) * radius;
+            fireParticlePositions[i*3 + 1] = Math.sin(angle) * radius;
+            fireParticlePositions[i*3 + 2] = 0;
+          }
+          geometry.attributes.position.needsUpdate = true;
+          ball.add(fireParticles);
+          return fireParticles;
+        }
+
+        function ensureIceParticles(){
+          if(iceParticles) return iceParticles;
+          var count = 80;
+          iceParticlePositions = new Float32Array(count * 3);
+          var geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.BufferAttribute(iceParticlePositions, 3));
+          var material = new THREE.PointsMaterial({
+            color: 0xb6e3ff,
+            size: 0.5,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.7,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          iceParticles = new THREE.Points(geometry, material);
+          iceParticles.frustumCulled = false;
+          iceParticles.visible = false;
+          iceParticleData = [];
+          for(var i=0;i<count;i++){
+            var offsetX = (Math.random() - 0.5) * 50;
+            var offsetZ = (Math.random() - 0.5) * 1.4;
+            var heightOffset = Math.random() * 1.2;
+            iceParticleData.push({ baseX: offsetX, baseZ: offsetZ, height: heightOffset, phase: Math.random()*Math.PI*2, speed: 1 + Math.random()*1.4, amplitude: 0.4 + Math.random()*0.3 });
+            iceParticlePositions[i*3] = offsetX;
+            iceParticlePositions[i*3 + 1] = iceWallY + 0.4 + heightOffset;
+            iceParticlePositions[i*3 + 2] = offsetZ;
+          }
+          geometry.attributes.position.needsUpdate = true;
+          scene.add(iceParticles);
+          return iceParticles;
+        }
+
+        function updateParticleSystems(delta){
+          var time = performance.now() * 0.0015;
+          if(fireParticles && fireParticles.visible){
+            var pos = fireParticles.geometry.attributes.position;
+            for(var i=0;i<fireParticleData.length;i++){
+              var data = fireParticleData[i];
+              data.angle += data.speed * delta;
+              var wobble = Math.sin(time * 0.9 + data.angle * 2.2) * data.wobble;
+              var x = Math.cos(data.angle) * data.radius;
+              var y = Math.sin(data.angle) * (data.radius * 0.85) + wobble * 0.3;
+              var z = wobble * 0.45;
+              pos.setXYZ(i, x, y, z);
+            }
+            pos.needsUpdate = true;
+          }
+          if(iceParticles && iceParticles.visible){
+            var icePos = iceParticles.geometry.attributes.position;
+            var t = performance.now()*0.001;
+            for(var j=0;j<iceParticleData.length;j++){
+              var info = iceParticleData[j];
+              var angle = t * info.speed + info.phase;
+              var x = info.baseX + Math.sin(angle) * 0.65;
+              var y = iceWallY + 0.4 + Math.abs(Math.cos(angle * 1.7)) * info.amplitude + info.height;
+              var z = info.baseZ + Math.sin(angle * 1.5) * 0.45;
+              icePos.setXYZ(j, x, y, z);
+            }
+            icePos.needsUpdate = true;
+          }
+          if(slowParticles && slowParticles.visible && slowParticleData){
+            var slowPos = slowParticles.geometry.attributes.position;
+            var count = slowParticleData.count;
+            var t2 = performance.now()*0.0012;
+            for(var k=0;k<count;k++){
+              var phi = slowParticleData.phases[k] + slowParticleData.speed[k] * delta;
+              slowParticleData.phases[k] = phi;
+              var r = slowParticleData.radius[k];
+              var x = Math.cos(phi) * r;
+              var y = Math.sin(phi) * (r * 0.6);
+              var z = Math.sin(t2 + phi * 2.6) * 0.38;
+              slowPos.setXYZ(k, x, y, z);
+            }
+            slowPos.needsUpdate = true;
+          }
+          if(wizzEffects.length){
+            for(var w=wizzEffects.length-1; w>=0; w--){
+              var effect = wizzEffects[w];
+              effect.age += delta;
+              var ring = effect.points.geometry.attributes.position;
+              var spin = effect.spin * delta;
+              for(var i=0;i<effect.count;i++){
+                var angle = effect.angles[i] + spin;
+                effect.angles[i] = angle;
+                var radius = effect.radius * (1 + Math.sin(effect.age * 6 + i * 0.08) * 0.05);
+                var x = Math.cos(angle) * radius;
+                var z = Math.sin(angle) * radius;
+                var y = Math.sin(angle * 2.1 + effect.age * 5) * effect.wave;
+                ring.setXYZ(i, x, y, z);
+              }
+              ring.needsUpdate = true;
+              var fade = 1 - (effect.age / effect.life);
+              effect.points.material.opacity = Math.max(0, fade * 0.95);
+              if(effect.age >= effect.life){
+                scene.remove(effect.points);
+                effect.points.geometry.dispose();
+                effect.points.material.dispose();
+                wizzEffects.splice(w,1);
+              }
+            }
+          }
+          if(fadingBlocks.length){
+            for(var f=fadingBlocks.length-1; f>=0; f--){
+              var entry = fadingBlocks[f];
+              entry.age += delta;
+              var tFade = 1 - (entry.age / entry.life);
+              if(entry.mesh.material){
+                entry.mesh.material.opacity = Math.max(0, tFade);
+                entry.mesh.material.needsUpdate = true;
+              }
+              entry.mesh.scale.setScalar(1 + (1 - tFade) * 0.25);
+              if(entry.age >= entry.life){
+                scene.remove(entry.mesh);
+                entry.mesh.geometry.dispose();
+                if(entry.mesh.material) entry.mesh.material.dispose();
+                fadingBlocks.splice(f,1);
+              }
+            }
+          }
+          if(brickBursts.length){
+            for(var b = brickBursts.length - 1; b >= 0; b--){
+              var burst = brickBursts[b];
+              burst.age += delta;
+              var attr = burst.points.geometry.attributes.position;
+              for(var p=0;p<burst.positions.length/3;p++){
+                var vxIndex = p*3;
+                burst.velocities[vxIndex + 1] -= (burst.fire ? 18 : 12) * delta;
+                burst.velocities[vxIndex] *= 0.93;
+                burst.velocities[vxIndex + 2] *= 0.93;
+                burst.positions[vxIndex] += burst.velocities[vxIndex] * delta * 0.05;
+                burst.positions[vxIndex + 1] += burst.velocities[vxIndex + 1] * delta * 0.05;
+                burst.positions[vxIndex + 2] += burst.velocities[vxIndex + 2] * delta * 0.05;
+                attr.setXYZ(p, burst.positions[vxIndex], burst.positions[vxIndex + 1], burst.positions[vxIndex + 2]);
+              }
+              attr.needsUpdate = true;
+              var fadeBurst = 1 - (burst.age / burst.life);
+              burst.points.material.opacity = Math.max(0, fadeBurst * (burst.fire ? 1 : 0.78));
+              if(burst.age >= burst.life){
+                scene.remove(burst.points);
+                burst.points.geometry.dispose();
+                burst.points.material.dispose();
+                brickBursts.splice(b, 1);
+              }
+            }
+          }
         }
 
         // Start in menu

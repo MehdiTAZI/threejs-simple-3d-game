@@ -1,55 +1,55 @@
 # Breaker 3D Arcade
 
-Breaker 3D Arcade est une revisite moderne du casse-brique réalisée avec [Three.js](https://threejs.org/). Le projet tient dans un seul `index.html` et met en scène un gameplay arcade, plusieurs univers thématiques, des modèles 3D distants et des mécaniques de gamification (combos, quêtes, succès).
+Breaker 3D Arcade est un casse-brique moderne en 3D réalisé avec [Three.js](https://threejs.org/), intégrant des modèles glTF distants, des power-ups, un système de score, des réalisations et plusieurs états de jeu (menu, partie, pause, game over).
 
-## Fonctionnalités principales
+## Fonctionnalités
 
-- **Gameplay casse-brique en 3D** avec raquette cylindrique, bille dynamique et trajectoire influencée par la position d’impact.
-- **Plusieurs scènes thématiques** qui s’enchaînent à mesure que les niveaux défilent : changement d’éclairage, de brouillard, de sol et chargement d’un modèle glTF externe (casque futuriste, flamant rose, robot expressif, etc.).
-- **Moteur de niveaux variés** (motifs classiques, en vagues, pyramide) générant automatiquement les briques et augmentant la difficulté.
-- **Gamification** : système de score combo, meilleures performances enregistrées en `localStorage`, quêtes dynamiques avec récompenses, power-ups (agrandissement, vie, bonus de score) et réalisations.
-- **Ambiance sonore complète** avec effets contextuels, bande-son par scène, contrôle de volume et fondu enchaîné lors des transitions.
-- **Animations glTF** pilotées par `THREE.AnimationMixer` (ex. robot orbital qui alterne plusieurs clips d’animation).
+- **Gameplay 3D** : raquette cylindrique, balle dynamique, briques générées automatiquement selon le niveau.
+- **HUD interactif** : affichage du score, des vies, du niveau et des réalisations.
+- **Modèles 3D décoratifs** : chargement d’un modèle glTF distant (exemple : Duck) animé dans la scène.
+- **Power-ups** : objets bonus apparaissant aléatoirement (agrandissement de la raquette, vie supplémentaire).
+- **Plusieurs états de jeu** : menu d’accueil, partie en cours, pause, game over.
+- **Gamification** : système de réalisations débloquées selon la progression (score, niveau).
+- **Contrôles améliorés** : clavier (flèches, espace), souris (déplacement horizontal), boutons HUD (démarrer, pause).
+- **Responsive** : adaptation automatique à la taille de la fenêtre.
 
 ## Lancer le jeu
 
-1. Clone ou télécharge ce dépôt.
-2. Ouvre `index.html` dans un navigateur moderne (Chrome, Edge, Firefox). Pas besoin de serveur.
-3. Vérifie que le navigateur peut accéder à Internet pour récupérer les modèles glTF et les musiques distants.
-4. Clique sur **Démarrer** pour lancer la partie.
+1. Télécharge ou clone ce dépôt.
+2. Ouvre `index.html` dans un navigateur moderne (Chrome, Edge, Firefox).
+3. Clique sur **Démarrer** pour jouer.
 
-> 💡 Si le jeu reste figé, ouvre la console (F12) et vérifie qu’aucun bloqueur n’empêche le chargement des ressources distantes.
+> ⚠️ Le jeu nécessite une connexion Internet pour charger le modèle 3D décoratif.
 
 ## Contrôles
 
 - **Flèches gauche/droite** : déplacer la raquette.
 - **Souris** : déplacer la raquette horizontalement.
-- **Espace** : mettre en pause / reprendre.
-- **Boutons HUD** : démarrer, mettre en pause, activer/désactiver l’audio, régler le volume.
+- **Espace** : pause / reprise.
+- **Boutons HUD** : démarrer, pause.
 
-## Structure du projet
+## Structure
 
 ```
 threejs-simple-3d-game/
-├─ index.html   # Jeu complet (scène Three.js + logique + UI)
+├─ index.html   # Jeu complet (Three.js + logique + UI)
 └─ README.md    # Ce guide
 ```
 
-Tout le code est regroupé dans `index.html` pour faciliter le déploiement statique (GitHub Pages, Netlify, Vercel, etc.).
+Tout le code est dans `index.html` pour faciliter le déploiement statique.
 
 ## Ressources externes
 
 - **Three.js 0.119.1** et **GLTFLoader** via jsDelivr.
-- Modèles glTF (DamagedHelmet, Flamingo, Robot Expressive) depuis les exemples officiels de Three.js.
-- Effets sonores et musiques téléchargés depuis [Pixabay](https://pixabay.com/).
+- Modèle glTF Duck depuis les exemples officiels de Three.js.
 
-Crédite les auteurs si tu publies le jeu, et veille à respecter la licence des assets.
+## Améliorations possibles
 
-## Idées d’amélioration
-
-- Ajouter un système de particules et des shaders personnalisés pour les explosions de briques.
-- Intégrer un mode multijoueur local ou un classement en ligne.
-- Gérer la physique avec Cannon.js ou Ammo.js pour des collisions plus réalistes.
-- Exporter la logique de jeu dans des modules ES pour faciliter les tests unitaires et la maintenance.
+- Ajouter des effets sonores et musiques.
+- Intégrer des modèles 3D variés selon le niveau.
+- Ajouter des particules et des shaders personnalisés.
+- Gérer la physique avec Cannon.js ou Ammo.js.
 
 Bon jeu !
+
+
