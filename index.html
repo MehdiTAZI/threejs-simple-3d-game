@@ -648,7 +648,7 @@
             scale: 1.55,
             smooth: 0.12,
             speedCap: 1.35,
-            ability: { name: 'Inferno strike', type: 'fireball', cooldown: 16000, duration: 8000, radius: 2.6 }
+            ability: { name: 'Inferno strike', type: 'fireball', cooldown: 16000, duration: 4000, radius: 2.6 }
           },
           aero: {
             name: 'Azure Aero',
@@ -2358,13 +2358,18 @@
             if (block.position.distanceTo(ball.position) < 1.2) {
               var diffX = Math.abs(ball.position.x - block.position.x);
               var diffY = Math.abs(ball.position.y - block.position.y);
-              if(diffX > diffY){
-                ballDirection.x *= -1;
+              var unstoppable = abilityState.fireballActive;
+              if(!unstoppable){
+                if(diffX > diffY){
+                  ballDirection.x *= -1;
+                } else {
+                  ballDirection.y *= -1;
+                }
+                stabiliseBallDirection();
+                accelerateBall(1.02);
               } else {
-                ballDirection.y *= -1;
+                accelerateBall(1.01);
               }
-              stabiliseBallDirection();
-              accelerateBall(1.02);
               destroyBlockAtIndex(i, { allowIgnite: true, fireBurst: abilityState.fireballActive });
               i--;
             }
