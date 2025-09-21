@@ -426,6 +426,9 @@
         var sfxGain = null;
         var musicGain = null;
         var musicNodes = [];
+        var currentMusicSource = null;
+        var musicBuffers = {};
+        var musicTrackLoading = {};
         var currentMusicTheme = null;
         var pendingMusicTheme = null;
         var musicTimer = null;
@@ -729,6 +732,29 @@
           }
         };
 
+        var musicTracks = {
+          'Synthwave Nebula': {
+            url: 'resources/background1.mp3',
+            volume: 0.26,
+            loop: true
+          },
+          'Cosmic Garden': {
+            url: 'resources/background2.mp3',
+            volume: 0.22,
+            loop: true
+          },
+          'Orbital Station': {
+            url: 'resources/background3.mp3',
+            volume: 0.25,
+            loop: true
+          },
+          default: {
+            url: 'resources/background4.mp3',
+            volume: 0.24,
+            loop: true
+          }
+        };
+
         function initAudioEngine(){
           if(audioCtx) return;
           var AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -804,40 +830,72 @@
         }
 
         function stopThemeMusic(){
-          if(musicTimer){ clearTimeout(musicTimer); musicTimer = null; }
-          if(!musicNodes.length) return;
-          var now = audioCtx ? audioCtx.currentTime : 0;
-          musicNodes.forEach(function(node){
+          if(musicTimer){
+            clearTimeout(musicTimer);
+            musicTimer = null;
+          }
+          if(audioCtx && musicGain){
             try {
-              node.gain.gain.cancelScheduledValues(now);
-              node.gain.gain.setTargetAtTime(0.0001, now, 0.5);
-              node.osc.stop(now + 0.8);
+              musicGain.gain.cancelScheduledValues(audioCtx.currentTime);
+              musicGain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.4);
             } catch(err) {}
-            if(node.lfo){
-              try { node.lfo.stop(now + 0.8); } catch(err) {}
-              try { node.lfo.disconnect(); } catch(err) {}
-            }
-            if(node.lfoGain){ try { node.lfoGain.disconnect(); } catch(err) {} }
-            if(node.filter){ try { node.filter.disconnect(); } catch(err) {} }
-            try { node.gain.disconnect(); } catch(err) {}
-            try { node.osc.disconnect(); } catch(err) {}
-          });
-          musicNodes.length = 0;
+          }
+          if(currentMusicSource){
+            try { currentMusicSource.stop(); } catch(err) {}
+            try { currentMusicSource.disconnect(); } catch(err) {}
+            currentMusicSource = null;
+          }
+          if(musicNodes.length){
+            var now = audioCtx ? audioCtx.currentTime : 0;
+            musicNodes.forEach(function(node){
+              try {
+                node.gain.gain.cancelScheduledValues(now);
+                node.gain.gain.setTargetAtTime(0.0001, now, 0.5);
+                node.osc.stop(now + 0.8);
+              } catch(err) {}
+              if(node.lfo){
+                try { node.lfo.stop(now + 0.8); } catch(err) {}
+                try { node.lfo.disconnect(); } catch(err) {}
+              }
+              if(node.lfoGain){ try { node.lfoGain.disconnect(); } catch(err) {} }
+              if(node.filter){ try { node.filter.disconnect(); } catch(err) {} }
+              try { node.gain.disconnect(); } catch(err) {}
+              try { node.osc.disconnect(); } catch(err) {}
+            });
+            musicNodes.length = 0;
+          }
           currentMusicTheme = null;
+          pendingMusicTheme = null;
         }
 
-        function startThemeMusic(themeName){
-          if(!audioEnabled) return;
-          if(!audioCtx){
-            pendingMusicTheme = themeName;
-            return;
-          }
-          if(audioCtx.state === 'suspended'){
-            audioCtx.resume().then(function(){ startThemeMusic(themeName); }).catch(()=>{});
-            return;
-          }
-          stopThemeMusic();
+        function loadMusicBuffer(url){
+          if(musicBuffers[url]) return Promise.resolve(musicBuffers[url]);
+          if(musicTrackLoading[url]) return musicTrackLoading[url];
+          if(!audioCtx) return Promise.reject(new Error('Audio context not ready'));
+          var pending = fetch(url).then(function(response){
+            if(!response.ok){
+              throw new Error('Music request failed with status ' + response.status);
+            }
+            return response.arrayBuffer();
+          }).then(function(data){
+            return new Promise(function(resolve, reject){
+              audioCtx.decodeAudioData(data, function(buffer){
+                musicBuffers[url] = buffer;
+                resolve(buffer);
+              }, function(err){ reject(err); });
+            });
+          });
+          musicTrackLoading[url] = pending.then(function(buffer){
+            delete musicTrackLoading[url];
+            return buffer;
+          }, function(err){
+            delete musicTrackLoading[url];
+            throw err;
+          });
+          return musicTrackLoading[url];
+        }
 
+        function playProceduralMusic(themeName){
           var preset = musicPresets[themeName] || musicPresets.default;
           if(!preset || !preset.chords || !preset.chords.length){
             currentMusicTheme = themeName;
@@ -886,7 +944,13 @@
                 osc.connect(gainNode);
               }
 
-              gainNode.connect(musicGain);
+              if(musicGain){
+                gainNode.connect(musicGain);
+              } else if(masterGain){
+                gainNode.connect(masterGain);
+              } else {
+                gainNode.connect(audioCtx.destination);
+              }
 
               var entry = { osc: osc, gain: gainNode, filter: filter };
               osc.onended = function(){
@@ -908,6 +972,64 @@
           playChord();
           currentMusicTheme = themeName;
           pendingMusicTheme = null;
+        }
+
+        function startThemeMusic(themeName){
+          if(!audioEnabled) return;
+          if(!audioCtx){
+            pendingMusicTheme = themeName;
+            return;
+          }
+          if(audioCtx.state === 'suspended'){
+            audioCtx.resume().then(function(){ startThemeMusic(themeName); }).catch(()=>{});
+            return;
+          }
+
+          var track = musicTracks[themeName] || musicTracks.default;
+          stopThemeMusic();
+          currentMusicTheme = themeName;
+          pendingMusicTheme = null;
+
+          if(track && track.url){
+            var targetVol = track.volume !== undefined ? track.volume : 0.3;
+            if(musicGain){
+              try {
+                musicGain.gain.cancelScheduledValues(audioCtx.currentTime);
+                musicGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+              } catch(err) {}
+            }
+            loadMusicBuffer(track.url).then(function(buffer){
+              if(!audioCtx || audioCtx.state === 'closed') return;
+              if(currentMusicTheme !== themeName) return;
+              var source = audioCtx.createBufferSource();
+              source.buffer = buffer;
+              source.loop = track.loop !== false;
+              if(track.loopStart !== undefined) source.loopStart = track.loopStart;
+              if(track.loopEnd !== undefined) source.loopEnd = track.loopEnd;
+              source.connect(musicGain || masterGain || audioCtx.destination);
+              currentMusicSource = source;
+              source.onended = function(){
+                if(currentMusicSource === source) currentMusicSource = null;
+              };
+              var startAt = audioCtx.currentTime + 0.05;
+              try {
+                source.start(startAt);
+              } catch(err){
+                console.warn('Unable to start streamed music', err);
+              }
+              if(musicGain){
+                musicGain.gain.setTargetAtTime(targetVol, startAt, 0.8);
+              } else if(masterGain){
+                masterGain.gain.setTargetAtTime(targetVol, startAt, 0.8);
+              }
+            }).catch(function(err){
+              console.warn('Falling back to procedural music for theme', themeName, err);
+              playProceduralMusic(themeName);
+            });
+            return;
+          }
+
+          playProceduralMusic(themeName);
         }
 
         function queueThemeMusic(theme){
@@ -975,7 +1097,7 @@
             animation: 'spin',
             background: {
               texture: 'https://images.pexels.com/photos/713046/pexels-photo-713046.jpeg?auto=compress&cs=tinysrgb&w=1920',
-              floor: 'https://images.pexels.com/photos/158028/space-earth-planet-galaxy-158028.jpeg?auto=compress&cs=tinysrgb&w=1600'
+              floor: 'https://images.pexels.com/photos/158028/pexels-photo-158028.jpeg?auto=compress&cs=tinysrgb&w=1600'
             }
           },
           {
@@ -1422,6 +1544,7 @@
             showMessage('Choose a paddle to get started', 1800);
             return;
           }
+          stopThemeMusic();
           ensureAudioReady();
           playSfx('levelUp');
           score = 0; lives = 3; level = 1;
