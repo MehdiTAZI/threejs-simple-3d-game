@@ -479,6 +479,7 @@
         var gltfLoader = null;
         var brickTextureCache = {};
         var skyTextureCache = {};
+        var particleTextures = {};
 
         function getGLTFLoader(onReady, attempt){
           attempt = attempt || 0;
@@ -502,6 +503,31 @@
             return;
           }
           setTimeout(function(){ getGLTFLoader(onReady, attempt + 1); }, 200);
+        }
+
+        function getParticleTexture(hex){
+          if(!hex) hex = '#ffffff';
+          if(particleTextures[hex]) return particleTextures[hex];
+          var size = 72;
+          var canvas = document.createElement('canvas');
+          canvas.width = canvas.height = size;
+          var ctx = canvas.getContext('2d');
+          var gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+          var color = new THREE.Color(hex);
+          var inner = 'rgba(' + Math.round(Math.min(255, color.r * 280)) + ',' + Math.round(Math.min(255, color.g * 280)) + ',' + Math.round(Math.min(255, color.b * 280)) + ',1)';
+          var mid = 'rgba(' + Math.round(color.r * 255) + ',' + Math.round(color.g * 255) + ',' + Math.round(color.b * 255) + ',0.6)';
+          var outer = 'rgba(' + Math.round(color.r * 255) + ',' + Math.round(color.g * 255) + ',' + Math.round(color.b * 255) + ',0)';
+          gradient.addColorStop(0, inner);
+          gradient.addColorStop(0.45, mid);
+          gradient.addColorStop(1, outer);
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0,0,size,size);
+          var texture = new THREE.CanvasTexture(canvas);
+          texture.magFilter = THREE.LinearFilter;
+          texture.minFilter = THREE.LinearFilter;
+          texture.needsUpdate = true;
+          particleTextures[hex] = texture;
+          return texture;
         }
 
         function getBrickTexture(url){
@@ -2103,9 +2129,12 @@
           updateHUD();
           tryCompleteQuest();
           checkAchievements();
-          var fireTriggered = !!(options.fireBurst && abilityState.fireballActive);
+          var fireTriggered = !!(abilityState.fireballActive && options.fireBurst && !options.disableFireChain);
           spawnBrickBurst(hitPosition, fireTriggered);
           startBlockFade(block, fireTriggered);
+          if(fireTriggered){
+            spawnWizzEffect(hitPosition, abilityState.fireballRadius || 2.5, true);
+          }
 
           if(fireTriggered && options.allowIgnite !== false){
             igniteNearbyBlocks(hitPosition, abilityState.fireballRadius || 2.8);
@@ -2136,15 +2165,12 @@
             var entry = candidates[i];
             var index = blocks.indexOf(entry.block);
             if(index !== -1){
-              destroyBlockAtIndex(index, { allowIgnite: false, playSound: false, scoreMultiplier: 0.75, skipLevelCheck: true, fireBurst: true });
+              destroyBlockAtIndex(index, { allowIgnite: false, playSound: false, scoreMultiplier: 0.75, skipLevelCheck: true, fireBurst: true, disableFireChain: true });
               destroyed++;
             }
           }
-          if(destroyed){
-            spawnWizzEffect(center, radius, true);
-            if(blocks.length === 0){
-              handleLevelCleared();
-            }
+          if(destroyed && blocks.length === 0){
+            handleLevelCleared();
           }
         }
 
@@ -2186,12 +2212,15 @@
           var positions = new Float32Array(count * 3);
           geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
           var material = new THREE.PointsMaterial({
-            color: fireMode ? 0xff9b6a : 0x7dd3fc,
-            size: fireMode ? 0.36 : 0.3,
+            color: 0xffffff,
+            size: fireMode ? 0.48 : 0.36,
+            sizeAttenuation: true,
+            map: getParticleTexture(fireMode ? '#ff9b6a' : '#7dd3fc'),
             transparent: true,
-            opacity: 0.9,
+            opacity: 0.92,
             blending: THREE.AdditiveBlending,
-            depthWrite: false
+            depthWrite: false,
+            alphaTest: 0.01
           });
           var points = new THREE.Points(geometry, material);
           points.position.copy(position);
@@ -2240,12 +2269,15 @@
           var geometry = new THREE.BufferGeometry();
           geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
           var material = new THREE.PointsMaterial({
-            color: fireMode ? 0xffb347 : 0x8fd6ff,
-            size: fireMode ? 0.3 : 0.22,
+            color: 0xffffff,
+            size: fireMode ? 0.42 : 0.32,
+            sizeAttenuation: true,
+            map: getParticleTexture(fireMode ? '#ff924d' : '#8fd6ff'),
             transparent: true,
-            opacity: fireMode ? 0.95 : 0.8,
+            opacity: fireMode ? 0.95 : 0.82,
             blending: THREE.AdditiveBlending,
-            depthWrite: false
+            depthWrite: false,
+            alphaTest: 0.01
           });
           var points = new THREE.Points(geometry, material);
           points.position.copy(position);
@@ -2630,13 +2662,15 @@
           var geometry = new THREE.BufferGeometry();
           geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
           var material = new THREE.PointsMaterial({
-            color: 0xc4b5fd,
-            size: 0.32,
+            color: 0xffffff,
+            size: 0.42,
             sizeAttenuation: true,
+            map: getParticleTexture('#c4b5fd'),
             transparent: true,
-            opacity: 0.75,
+            opacity: 0.82,
             blending: THREE.AdditiveBlending,
-            depthWrite: false
+            depthWrite: false,
+            alphaTest: 0.01
           });
           slowParticles = new THREE.Points(geometry, material);
           slowParticles.frustumCulled = false;
@@ -2671,13 +2705,15 @@
           var geometry = new THREE.BufferGeometry();
           geometry.setAttribute('position', new THREE.BufferAttribute(fireParticlePositions, 3));
           var material = new THREE.PointsMaterial({
-            color: 0xffb347,
-            size: 0.38,
+            color: 0xffffff,
+            size: 0.55,
             sizeAttenuation: true,
+            map: getParticleTexture('#ff8a42'),
             transparent: true,
-            opacity: 0.85,
+            opacity: 0.95,
             blending: THREE.AdditiveBlending,
-            depthWrite: false
+            depthWrite: false,
+            alphaTest: 0.01
           });
           fireParticles = new THREE.Points(geometry, material);
           fireParticles.frustumCulled = false;
@@ -2703,13 +2739,15 @@
           var geometry = new THREE.BufferGeometry();
           geometry.setAttribute('position', new THREE.BufferAttribute(iceParticlePositions, 3));
           var material = new THREE.PointsMaterial({
-            color: 0xb6e3ff,
-            size: 0.5,
+            color: 0xffffff,
+            size: 0.58,
             sizeAttenuation: true,
+            map: getParticleTexture('#9fd8ff'),
             transparent: true,
-            opacity: 0.7,
+            opacity: 0.78,
             blending: THREE.AdditiveBlending,
-            depthWrite: false
+            depthWrite: false,
+            alphaTest: 0.01
           });
           iceParticles = new THREE.Points(geometry, material);
           iceParticles.frustumCulled = false;
@@ -2810,8 +2848,7 @@
               entry.mesh.scale.setScalar(1 + (1 - tFade) * 0.25);
               if(entry.age >= entry.life){
                 scene.remove(entry.mesh);
-                entry.mesh.geometry.dispose();
-                if(entry.mesh.material) entry.mesh.material.dispose();
+                if(entry.mesh.material && entry.mesh.material.dispose){ entry.mesh.material.dispose(); }
                 fadingBlocks.splice(f,1);
               }
             }
