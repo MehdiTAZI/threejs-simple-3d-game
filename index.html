@@ -728,6 +728,14 @@
 
         function openSelectionModal(){
           selectionModal.classList.remove('hidden');
+          if(audioEnabled){
+            pendingMusicTheme = 'Start Screen';
+            if(!audioUnlocked){
+              ensureAudioReady();
+            } else {
+              startThemeMusic('Start Screen');
+            }
+          }
         }
 
         function closeSelectionModal(){
@@ -1177,12 +1185,26 @@
           }
         }
 
-        function ensureAudioReady(){
-          if(audioUnlocked) return;
-          audioUnlocked = true;
-          initAudioEngine();
-          if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-          if(pendingMusicTheme) startThemeMusic(pendingMusicTheme);
+        function ensureAudioReady(force){
+          if(!audioEnabled) return;
+          if(!audioCtx){
+            initAudioEngine();
+          }
+          if(!audioCtx) return;
+          if(audioCtx.state !== 'suspended'){
+            if(!audioUnlocked) audioUnlocked = true;
+            if(pendingMusicTheme && pendingMusicTheme !== currentMusicTheme){
+              startThemeMusic(pendingMusicTheme);
+            }
+            return;
+          }
+          if(audioUnlocked && !force) return;
+          audioCtx.resume().then(function(){
+            audioUnlocked = true;
+            if(pendingMusicTheme) startThemeMusic(pendingMusicTheme);
+          }).catch(function(){
+            audioUnlocked = false;
+          });
         }
 
         function toggleAudio(){
@@ -1206,6 +1228,7 @@
           score = 0;
           level = profile.startLevel;
           lives = profile.lives;
+          buildLevel({ preview: true });
           updateHUD();
           var prompt = customMessage || 'Select a level and paddle to start';
           showMessage(prompt);
@@ -1220,7 +1243,7 @@
             stageBanner.textContent = profile.name;
             stageBanner.style.opacity = 0.85;
           }
-          if(audioEnabled && audioUnlocked){
+          if(audioEnabled){
             ensureAudioReady();
             resumeMusic();
           }
@@ -1363,7 +1386,8 @@
           }
         ];
 
-        function buildLevel(){
+        function buildLevel(options){
+          options = options || {};
           while (brickGroup.children.length) brickGroup.remove(brickGroup.children[0]);
           blocks.length = 0;
 
@@ -1377,10 +1401,11 @@
 
           var layoutIndex = (level - 1) % levelLayouts.length;
           levelLayouts[layoutIndex](level, addBlock);
-          applyTheme(level);
+          applyTheme(level, options);
         }
 
-        function applyTheme(nextLevel){
+        function applyTheme(nextLevel, options){
+          options = options || {};
           var theme = sceneThemes[(nextLevel - 1) % sceneThemes.length];
           currentTheme = theme;
           currentThemeBaseY = theme.modelPosition.y;
@@ -1467,7 +1492,11 @@
           }
 
           loadThemeModel(theme);
-          queueThemeMusic(theme);
+          if(!options.preview){
+            queueThemeMusic(theme);
+          } else {
+            pendingMusicTheme = 'Start Screen';
+          }
           setSceneBanner(theme.name);
         }
 
@@ -1577,10 +1606,6 @@
             currentThemeModel.position.y = currentThemeBaseY + Math.sin(time * 1.6) * 0.24;
           }
         }
-
-        buildLevel();
-        updateHUD();
-
         // Power-up spawn: sphere that falls; collision with ball activates effect
         function spawnPowerUp(){
           var types = ['expand', 'life', 'score'];
@@ -1733,6 +1758,7 @@
             level = profile.startLevel;
             lives = profile.lives;
             updateHUD();
+            buildLevel({ preview: true });
           }
           if(gameState === 'menu' && audioEnabled && audioUnlocked){
             pendingMusicTheme = 'Start Screen';
@@ -1928,7 +1954,16 @@
               var halo = up.userData.halo;
               halo.material.opacity = 0.18 + 0.07 * Math.sin(Date.now()*0.002 + p);
             }
-            if(up.position.distanceTo(ball.position) < 1.2){
+            var collectedByBall = up.position.distanceTo(ball.position) < 1.2;
+            var collectedByPaddle = false;
+            if(!collectedByBall){
+              var dx = Math.abs(up.position.x - paddle.position.x);
+              var dy = Math.abs(up.position.y - paddle.position.y);
+              if(dx <= paddleHitRadius + 1 && dy <= 2.2){
+                collectedByPaddle = true;
+              }
+            }
+            if(collectedByBall || collectedByPaddle){
               if(up.userData.type==='expand'){
                 paddle.scale.x = 2;
                 updatePaddleHitRadius();
@@ -2133,8 +2168,8 @@
         checkForIOInteraction();
 
         function unlockAudioOnInteraction(){
-          if(!audioEnabled || audioUnlocked) return;
-          ensureAudioReady();
+          if(!audioEnabled) return;
+          ensureAudioReady(true);
           resumeMusic();
         }
 
