@@ -295,12 +295,24 @@ var paddleProfiles = paddleProfilesConfig;
         var scoreboardBtn = document.getElementById('scoreboard-btn');
         var scoreboardContinue = document.getElementById('scoreboard-continue');
         var scoreboardClose = document.getElementById('scoreboard-close');
+        var scoreboardSaveSection = document.getElementById('scoreboard-save-section');
+        var scoreboardNameInput = document.getElementById('scoreboard-name');
+        var scoreboardSaveButton = document.getElementById('scoreboard-save');
+        var scoreboardList = document.getElementById('scoreboard-list');
         var scoreboardPendingCallback = null;
         var scoreboardPreviousState = null;
+        var scoreboardCurrentMode = 'summary';
+        var scoreboardSavedThisRound = true;
+        var SCOREBOARD_STORAGE_KEY = 'breaker-scoreboard';
+        var PLAYER_NAME_STORAGE_KEY = 'breaker-player-name';
+        var scoreboardEntries = loadScoreboardEntries();
+        var lastPlayerName = loadLastPlayerName();
+        var pausedBySelectionModal = false;
+        var pausedByLevelModal = false;
 
         if(scoreboardBtn){
           scoreboardBtn.addEventListener('click', function(){
-            openScoreboard('Current run', { pauseState: 'paused' });
+            openScoreboard('Current run', { pauseState: 'paused', mode: 'summary' });
           });
         }
         if(scoreboardClose){
@@ -324,10 +336,28 @@ var paddleProfiles = paddleProfilesConfig;
             }
           });
         }
+        if(scoreboardSaveButton){
+          scoreboardSaveButton.addEventListener('click', function(){
+            saveScoreboardEntry();
+          });
+        }
+        if(scoreboardNameInput){
+          scoreboardNameInput.addEventListener('keydown', function(evt){
+            if(evt.key === 'Enter'){
+              evt.preventDefault();
+              saveScoreboardEntry();
+            }
+          });
+        }
 
+        refreshScoreboard();
 
         function openSelectionModal(){
           selectionModal.classList.remove('hidden');
+          if(gameState === 'playing'){
+            gameState = 'paused';
+            pausedBySelectionModal = true;
+          }
           if(audioState.enabled){
             queueThemeMusic({ name: 'Start Screen' });
             if(!audioState.unlocked){
@@ -339,6 +369,10 @@ var paddleProfiles = paddleProfilesConfig;
 
         function closeSelectionModal(){
           selectionModal.classList.add('hidden');
+          if(pausedBySelectionModal && gameState !== 'scoreboard'){
+            gameState = 'playing';
+          }
+          pausedBySelectionModal = false;
         }
 
         function applyPaddleProfile(key){
@@ -437,35 +471,125 @@ function queueThemeMusic(theme){
   }
 }
 
+function loadScoreboardEntries(){
+  try {
+    var raw = window.localStorage.getItem(SCOREBOARD_STORAGE_KEY);
+    if(raw){
+      var parsed = JSON.parse(raw);
+      if(Array.isArray(parsed)) return parsed.slice(0, 10);
+    }
+  } catch(err) {
+    console.warn('Unable to load scoreboard', err);
+  }
+  return [];
+}
+
+function saveScoreboardEntries(){
+  try {
+    window.localStorage.setItem(SCOREBOARD_STORAGE_KEY, JSON.stringify(scoreboardEntries.slice(0, 10)));
+  } catch(err) {
+    console.warn('Unable to save scoreboard', err);
+  }
+}
+
+function loadLastPlayerName(){
+  try {
+    return window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || '';
+  } catch(err) {
+    return '';
+  }
+}
+
+function storeLastPlayerName(name){
+  try {
+    window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name);
+  } catch(err) { /* noop */ }
+}
+
+function escapeHtml(value){
+  return String(value || '').replace(/[&<>"']/g, function(match){
+    var map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return map[match] || match;
+  });
+}
+
 function refreshScoreboard(){
-  if(!scoreboardScore) return;
-  scoreboardScore.textContent = score;
-  scoreboardBest.textContent = bestScore;
-  scoreboardLevel.textContent = level;
+  if(scoreboardScore) scoreboardScore.textContent = score;
+  if(scoreboardBest) scoreboardBest.textContent = bestScore;
+  if(scoreboardLevel) scoreboardLevel.textContent = level;
+  if(scoreboardList){
+    if(scoreboardEntries.length){
+      scoreboardList.innerHTML = scoreboardEntries.map(function(entry, index){
+        return '<li><span class="rank">' + (index + 1) + '.</span><span class="name">' + escapeHtml(entry.name) + '</span><span class="score">' + entry.score + '</span><span class="level">Lvl ' + entry.level + '</span></li>';
+      }).join('');
+    } else {
+  scoreboardList.innerHTML = '<li class="empty">No scores yet</li>';
+    }
+  }
+  if(scoreboardSaveSection){
+    if(scoreboardCurrentMode === 'gameOver'){
+      scoreboardSaveSection.classList.add('active');
+      if(scoreboardSavedThisRound){
+        scoreboardSaveSection.classList.add('saved');
+      } else {
+        scoreboardSaveSection.classList.remove('saved');
+      }
+    } else {
+      scoreboardSaveSection.classList.remove('active');
+      scoreboardSaveSection.classList.remove('saved');
+    }
+  }
+  if(scoreboardNameInput && scoreboardCurrentMode === 'gameOver' && !scoreboardSavedThisRound){
+    scoreboardNameInput.value = lastPlayerName || '';
+  }
+  if(scoreboardSaveButton){
+    scoreboardSaveButton.disabled = (scoreboardCurrentMode !== 'gameOver') || scoreboardSavedThisRound;
+    scoreboardSaveButton.textContent = scoreboardSavedThisRound ? 'Saved' : 'Save score';
+  }
+  if(scoreboardContinue){
+    if(scoreboardPendingCallback){
+      if(scoreboardCurrentMode === 'gameOver' && !scoreboardSavedThisRound){
+        scoreboardContinue.style.display = 'none';
+      } else {
+        scoreboardContinue.style.display = 'inline-flex';
+      }
+    } else {
+      scoreboardContinue.style.display = 'none';
+    }
+  }
+  if(scoreboardClose){
+    if(scoreboardCurrentMode === 'gameOver'){
+      scoreboardClose.style.display = scoreboardSavedThisRound ? 'inline-flex' : 'none';
+    } else {
+      scoreboardClose.style.display = 'inline-flex';
+    }
+  }
 }
 
 function openScoreboard(summary, options){
   if(!scoreboardModal) return;
   options = options || {};
+  scoreboardCurrentMode = options.mode || 'summary';
+  scoreboardSavedThisRound = scoreboardCurrentMode !== 'gameOver';
   scoreboardPreviousState = null;
   if(options.pauseState){
     scoreboardPreviousState = gameState;
     gameState = options.pauseState;
   }
-  refreshScoreboard();
+  scoreboardPendingCallback = options.onContinue || null;
   if(scoreboardSummary){ scoreboardSummary.textContent = summary || ''; }
-  if(options.onContinue){
-    scoreboardPendingCallback = options.onContinue;
-    if(scoreboardContinue){ scoreboardContinue.style.display = 'inline-flex'; }
-  } else {
-    scoreboardPendingCallback = null;
-    if(scoreboardContinue){ scoreboardContinue.style.display = 'none'; }
-  }
+  refreshScoreboard();
   scoreboardModal.classList.remove('hidden');
+  if(scoreboardCurrentMode === 'gameOver' && scoreboardNameInput){
+    setTimeout(function(){ scoreboardNameInput.focus(); }, 120);
+  }
 }
 
 function closeScoreboard(triggerCallback){
   if(!scoreboardModal) return;
+  if(scoreboardCurrentMode === 'gameOver' && !scoreboardSavedThisRound){
+    return;
+  }
   scoreboardModal.classList.add('hidden');
   if(scoreboardSummary){ scoreboardSummary.textContent = ''; }
   if(scoreboardPreviousState !== null && gameState !== 'scoreboard'){
@@ -479,9 +603,34 @@ function closeScoreboard(triggerCallback){
   }
 }
 
+function saveScoreboardEntry(){
+  if(scoreboardCurrentMode !== 'gameOver' || !scoreboardSaveSection || scoreboardSavedThisRound) return;
+  var name = scoreboardNameInput ? scoreboardNameInput.value.trim() : '';
+  if(!name) name = 'Player';
+  lastPlayerName = name;
+  storeLastPlayerName(name);
+  scoreboardEntries.push({ name: name, score: score, level: level, time: Date.now() });
+  scoreboardEntries.sort(function(a, b){
+    if(b.score === a.score){ return a.time - b.time; }
+    return b.score - a.score;
+  });
+  scoreboardEntries = scoreboardEntries.slice(0, 10);
+  saveScoreboardEntries();
+  scoreboardSavedThisRound = true;
+  refreshScoreboard();
+  if(scoreboardPendingCallback && scoreboardContinue){
+    scoreboardContinue.style.display = 'inline-flex';
+  }
+  if(scoreboardClose){ scoreboardClose.style.display = 'inline-flex'; }
+}
+
+
         function enterMenuState(customMessage){
           stopThemeMusic();
           queueThemeMusic({ name: 'Start Screen' });
+          scoreboardCurrentMode = 'summary';
+          scoreboardSavedThisRound = true;
+          refreshScoreboard();
           gameState = 'menu';
           var profile = getSelectedDifficulty();
           score = 0;
@@ -1034,10 +1183,18 @@ function closeScoreboard(triggerCallback){
           pendingDifficultyKey = selectedDifficultyKey;
           refreshLevelCards();
           levelModal.classList.remove('hidden');
+          if(gameState === 'playing'){
+            gameState = 'paused';
+            pausedByLevelModal = true;
+          }
         }
 
         function closeLevelModal(){
           levelModal.classList.add('hidden');
+          if(pausedByLevelModal && gameState !== 'scoreboard'){
+            gameState = 'playing';
+          }
+          pausedByLevelModal = false;
         }
 
         function applyDifficultySelection(key){
@@ -1129,6 +1286,9 @@ function closeScoreboard(triggerCallback){
           }
           var difficulty = getSelectedDifficulty();
           stopThemeMusic();
+          scoreboardCurrentMode = 'summary';
+          scoreboardSavedThisRound = true;
+          refreshScoreboard();
           ensureAudioReady(true);
           playSfx('levelUp');
           score = 0;
@@ -1239,7 +1399,7 @@ function closeScoreboard(triggerCallback){
           resetCombo();
           while(powerUps.length){ var dropped = powerUps.pop(); scene.remove(dropped); }
           updateHUD();
-          openScoreboard('Level ' + completedLevel + ' cleared!', { onContinue: function(){ prepareNextLevel(difficulty); } });
+          openScoreboard('Level ' + completedLevel + ' cleared!', { mode: 'summary', onContinue: function(){ prepareNextLevel(difficulty); } });
         }
 
         function prepareNextLevel(difficulty){

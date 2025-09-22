@@ -16,6 +16,7 @@ export function initAudioSystem({ window }) {
     currentMusicTheme: null,
     pendingMusicTheme: 'Start Screen',
     musicTimer: null,
+    musicRequestId: 0,
   };
 
   const sfxPresets = {
@@ -200,6 +201,7 @@ export function initAudioSystem({ window }) {
     }
     state.currentMusicTheme = null;
     state.pendingMusicTheme = null;
+    state.musicRequestId += 1;
   }
 
   function loadMusicBuffer(url) {
@@ -237,6 +239,11 @@ export function initAudioSystem({ window }) {
   }
 
   function playProceduralMusic(themeName) {
+    // Ensure any currently playing theme (buffer or nodes) is stopped
+    stopThemeMusic();
+    // Bump request id to cancel any in-flight buffer load callbacks
+    state.musicRequestId += 1;
+
     const preset = musicPresets[themeName] || musicPresets.default;
     if (!preset || !preset.chords || !preset.chords.length) {
       state.currentMusicTheme = themeName;
@@ -336,6 +343,9 @@ export function initAudioSystem({ window }) {
     }
 
     stopThemeMusic();
+    state.musicRequestId += 1;
+    const requestId = state.musicRequestId;
+    state.pendingMusicTheme = themeName;
 
     const track = musicTracks[themeName] || musicTracks.default;
     if (track && track.url) {
@@ -346,6 +356,7 @@ export function initAudioSystem({ window }) {
       }
       loadMusicBuffer(track.url).then((buffer) => {
         if (!buffer || !state.ctx) return;
+        if (requestId !== state.musicRequestId) return;
         const source = state.ctx.createBufferSource();
         source.buffer = buffer;
         source.loop = !!track.loop;
@@ -362,8 +373,10 @@ export function initAudioSystem({ window }) {
         state.currentMusicTheme = themeName;
         state.pendingMusicTheme = null;
       }).catch((err) => {
+        if (requestId !== state.musicRequestId) return;
         console.warn('Unable to load music track', err);
         state.currentMusicSource = null;
+        playProceduralMusic(themeName);
       });
       return;
     }
